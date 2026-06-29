@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Depot Control — Stabling Diagram</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
+<style>
+  :root{
+    --bg:#0c1116; --panel:#141c24; --panel-2:#1b2630;
+    --rail:#37475a; --rail-lit:#5a7186; --line:#243140;
+    --ink:#e9eef3; --ink-dim:#8a9bab; --ink-faint:#5d6e7d;
+    --green:#33c977; --cyan:#39c5d6; --amber:#e8a838; --red:#e8554e; --violet:#9a8cf0;
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 24px rgba(0,0,0,.45);
+    --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --cond:"Barlow Condensed",system-ui,sans-serif;
+    --body:"Inter",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 80% -10%, #16222e 0%, transparent 60%),var(--bg);
+    color:var(--ink);font-family:var(--body);font-size:14px;-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;min-height:100%;
+  }
+  /* top bar */
+  header{display:flex;align-items:center;gap:18px;padding:14px 20px;
+    background:linear-gradient(var(--panel),#10171e);border-bottom:1px solid var(--line);
+    box-shadow:var(--shadow);position:sticky;top:0;z-index:20;}
+  .brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+  .brand h1{font-family:var(--cond);font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    font-size:21px;margin:0;line-height:1;white-space:nowrap}
+  .brand .sub{font-family:var(--mono);font-size:11px;color:var(--ink-dim);letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ver{font-family:var(--mono);font-size:10px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:2px 7px;letter-spacing:.04em;flex:none}
+  .spacer{flex:1}
+  .status-pill{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+    padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);white-space:nowrap}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint)}
+  .status-pill.live .dot{background:var(--green);box-shadow:0 0 10px var(--green);animation:beat 2s infinite}
+  .status-pill.demo .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .status-pill.err  .dot{background:var(--red);box-shadow:0 0 8px var(--red)}
+  @keyframes beat{0%,100%{opacity:1}50%{opacity:.35}}
+  .clock{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
+  .btn{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:13px;
+    color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:8px 13px;border-radius:8px;
+    cursor:pointer;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--rail-lit);background:#22303d}
+  .btn:active{transform:translateY(1px)}
+  .btn.icon{padding:8px 10px}
+  .search{display:flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  .search input{background:transparent;border:0;outline:0;color:var(--ink);font-family:var(--mono);font-size:12px;width:120px}
+  .search input::placeholder{color:var(--ink-faint)}
+  /* layout */
+  main{display:grid;grid-template-columns:212px minmax(0,1fr) 286px;grid-template-areas:"left yard right";flex:1;min-height:0}
+  .rail{padding:18px 16px;background:linear-gradient(180deg,#101820,#0d141a);overflow:auto}
+  .rail.left{grid-area:left;border-right:1px solid var(--line)}
+  .rail.right{grid-area:right;border-left:1px solid var(--line)}
+  .panel-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--ink-faint);margin:0 0 12px;font-weight:600}
+  .stat{display:flex;align-items:baseline;justify-content:space-between;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .stat:last-of-type{border-bottom:0}
+  .stat .v{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink)}
+  .stat .v.small{font-size:16px}
+  .stat .k{font-size:12px;color:var(--ink-dim);text-align:right;max-width:110px;line-height:1.25}
+  .legend{margin-top:22px}
+  .legend .row{display:flex;align-items:center;gap:9px;padding:6px 0;font-family:var(--mono);font-size:11.5px;color:var(--ink-dim)}
+  .chip{width:11px;height:11px;border-radius:3px;flex:none}
+  /* yard */
+  .yard{grid-area:yard;padding:14px 22px 40px;overflow:auto}
+  .section{margin-bottom:26px}
+  .section-head{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+  .section-head h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.12em;font-size:14px;margin:0;color:var(--ink);font-weight:700}
+  .section-head .meta{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint)}
+  .section-head .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+
+  .road{display:grid;grid-template-columns:56px 1fr;align-items:center;gap:14px;margin-bottom:9px}
+  .road-label{font-family:var(--cond);font-weight:700;text-transform:uppercase;font-size:17px;letter-spacing:.04em;
+    color:var(--ink);text-align:right;line-height:1}
+  .road-label small{display:block;font-family:var(--mono);font-weight:400;font-size:9px;color:var(--ink-faint);letter-spacing:0;margin-top:3px}
+
+  .track{position:relative;display:flex;align-items:stretch;gap:7px;min-height:62px;
+    padding:9px 14px 9px 20px;background:linear-gradient(var(--panel),#10171e);
+    border:1px solid var(--line);border-radius:10px;overflow-x:auto;overflow-y:hidden}
+  .track::before{content:"";position:absolute;left:0;right:0;top:50%;height:2px;transform:translateY(-50%);
+    background:linear-gradient(90deg,transparent 0,var(--rail) 18px,var(--rail) calc(100% - 18px),transparent 100%);
+    box-shadow:0 0 8px rgba(90,113,134,.25)}
+  .throat{position:absolute;left:7px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;
+    background:var(--rail-lit);box-shadow:0 0 8px var(--rail-lit);z-index:3}
+  .buffer{margin-left:auto;flex:none;display:flex;align-items:center;gap:3px;z-index:3;padding-left:4px}
+  .buffer i{display:block;width:4px;height:30px;background:var(--rail-lit);border-radius:1px;box-shadow:0 0 6px rgba(90,113,134,.4)}
+  .buffer span{font-family:var(--mono);font-size:8px;color:var(--ink-faint);writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-1px}
+
+  /* berth slot */
+  .slot{position:relative;z-index:2;flex:none;min-width:152px;border-radius:8px;padding:9px 14px 9px 15px;
+    display:flex;flex-direction:column;justify-content:center;transition:transform .12s,box-shadow .12s,border-color .12s}
+  .slot .berth-tag{position:absolute;top:5px;right:8px;font-family:var(--mono);font-size:9px;color:var(--ink-faint);letter-spacing:.05em}
+  .slot.empty{border:1px dashed var(--line);background:rgba(255,255,255,.012)}
+  .slot.empty .empty-lbl{font-family:var(--mono);font-size:11px;font-style:italic;color:var(--ink-faint)}
+  .slot.filled{background:linear-gradient(180deg,var(--panel-2),#16202a);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.35)}
+  .slot.filled::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:4px;border-radius:3px;background:var(--st)}
+  .slot.filled:hover{transform:translateY(-2px);border-color:var(--st);box-shadow:0 0 0 1px var(--st),0 8px 18px rgba(0,0,0,.5)}
+  .slot .unit{font-family:var(--mono);font-weight:700;font-size:15px;letter-spacing:.02em;color:var(--ink)}
+  .slot .meta{font-family:var(--mono);font-size:10px;color:var(--ink-dim);margin-top:3px;display:flex;gap:6px;align-items:center;white-space:nowrap}
+  .slot .st-dot{width:7px;height:7px;border-radius:50%;background:var(--st);box-shadow:0 0 7px var(--st);flex:none}
+  .slot.departing{animation:depart 1.6s infinite}
+  @keyframes depart{0%,100%{box-shadow:0 0 0 1px var(--st),0 0 14px rgba(232,168,56,0)}50%{box-shadow:0 0 0 1px var(--st),0 0 16px rgba(232,168,56,.55)}}
+  .slot.dim{opacity:.25;filter:grayscale(.4)}
+  .slot.hit{outline:2px solid var(--cyan);outline-offset:2px}
+
+  /* depot shed wrapper around inside berths */
+  .shed{position:relative;display:flex;gap:7px;align-items:stretch;z-index:2;
+    padding:16px 10px 9px;margin-top:0;border:1px solid #2c3a49;border-top:3px solid var(--rail-lit);
+    border-radius:6px;background:repeating-linear-gradient(135deg,rgba(90,113,134,.05) 0 8px,transparent 8px 16px),rgba(13,20,27,.6)}
+  .shed::before{content:"UNDER COVER";position:absolute;top:2px;left:50%;transform:translateX(-50%);
+    font-family:var(--mono);font-size:8px;letter-spacing:.18em;color:var(--ink-faint)}
+
+  .unplaced{margin-top:18px;padding:12px 14px;border:1px solid rgba(232,168,56,.35);background:rgba(232,168,56,.07);border-radius:9px}
+  .unplaced h4{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:12px;margin:0 0 8px;color:#f0cf8f}
+  .unplaced .row{display:flex;flex-wrap:wrap;gap:7px}
+  .utag{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:4px 8px;border-radius:6px}
+  .utag b{color:#f0cf8f}
+
+  /* right rail */
+  .rail-group{margin-bottom:22px}
+  .rail-gh{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:12px;color:var(--ink-faint);font-weight:600;display:flex;align-items:center;justify-content:space-between;margin:0 0 9px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .rail-gh .cnt{font-family:var(--mono);font-size:11px;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:1px 8px}
+  .rail-list{display:flex;flex-direction:column;gap:6px}
+  .ritem{position:relative;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:8px;
+    padding:7px 10px;border:1px solid var(--line);border-left:3px solid var(--st);border-radius:7px;
+    background:linear-gradient(180deg,var(--panel-2),#16202a)}
+  .ritem .st-dot{width:7px;height:7px;border-radius:50%;background:var(--st);box-shadow:0 0 7px var(--st)}
+  .ritem .ru{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--ink)}
+  .ritem .rr{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ritem.dim{opacity:.3}
+  .ritem.hit{outline:2px solid var(--cyan);outline-offset:1px}
+  .ritem.editable{cursor:pointer;transition:border-color .12s,transform .12s}
+  .ritem.editable:hover{border-color:var(--st);transform:translateX(2px)}
+  .addbtn{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:11px;
+    color:var(--ink-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:2px 8px;cursor:pointer}
+  .addbtn:hover{border-color:var(--rail-lit);color:var(--ink)}
+  .rempty{font-family:var(--mono);font-size:11px;font-style:italic;color:var(--ink-faint);padding:4px 2px}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(5,8,11,.62);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:.2s;z-index:40}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:380px;max-width:92vw;z-index:50;
+    background:linear-gradient(180deg,#131b23,#0e151b);border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .24s cubic-bezier(.4,0,.2,1);
+    display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.5)}
+  .drawer.open{transform:none}
+  .drawer header{position:static;background:transparent;border:0;box-shadow:none;padding:18px 20px}
+  .drawer h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-size:16px;margin:0}
+  .drawer .body{padding:0 20px 20px;overflow:auto;flex:1}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-size:11px;color:var(--ink-dim);margin-bottom:5px}
+  .field input,.field select{width:100%;background:#0c131a;border:1px solid var(--line);border-radius:7px;color:var(--ink);
+    font-family:var(--mono);font-size:12.5px;padding:9px 11px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--rail-lit)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .group{border:1px solid var(--line);border-radius:9px;padding:13px;margin-bottom:14px;background:rgba(255,255,255,.012)}
+  .group > .gh{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-faint);margin:0 0 11px}
+  .toggle{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .switch{position:relative;width:42px;height:23px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .slide{position:absolute;inset:0;background:#27333f;border-radius:999px;transition:.2s;cursor:pointer}
+  .slide::before{content:"";position:absolute;height:17px;width:17px;left:3px;top:3px;background:#9fb1c0;border-radius:50%;transition:.2s}
+  .switch input:checked + .slide{background:var(--green)}
+  .switch input:checked + .slide::before{transform:translateX(19px);background:#06140c}
+  .msg{font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:10px 12px;border-radius:7px;margin-top:6px;white-space:pre-wrap}
+  .msg.ok{background:rgba(51,201,119,.1);color:#9fe7bd;border:1px solid rgba(51,201,119,.3)}
+  .msg.bad{background:rgba(232,85,78,.1);color:#f0a8a4;border:1px solid rgba(232,85,78,.3)}
+  .msg.info{background:rgba(57,197,214,.08);color:#a9e6ee;border:1px solid rgba(57,197,214,.25)}
+  .drawer .foot{padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:10px}
+  .btn.primary{background:var(--green);color:#06140c;border-color:transparent;flex:1;justify-content:center}
+  .btn.primary:hover{background:#43d986}
+  .hint{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);line-height:1.5;margin-top:7px}
+
+  /* berth editor modal */
+  .slot.editable{cursor:pointer}
+  .slot.editable.empty:hover{border-color:var(--rail-lit);border-style:solid;background:rgba(90,113,134,.07)}
+  .modal{position:fixed;z-index:60;top:50%;left:50%;transform:translate(-50%,-46%);width:382px;max-width:92vw;
+    background:linear-gradient(180deg,#141d26,#0e151b);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 30px 80px rgba(0,0,0,.6);opacity:0;pointer-events:none;transition:.18s}
+  .modal.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 6px}
+  .modal-eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--cyan)}
+  .modal-head h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-size:18px;margin:3px 0 0}
+  .modal-body{padding:8px 20px 4px}
+  .modal-foot{display:flex;align-items:center;gap:10px;padding:14px 20px 18px}
+  .btn.danger{color:#f0a8a4;border-color:rgba(232,85,78,.4);background:rgba(232,85,78,.08)}
+  .btn.danger:hover{border-color:var(--red);background:rgba(232,85,78,.16)}
+
+  @media (max-width:880px){
+    main{grid-template-columns:1fr;grid-template-areas:"left" "yard" "right"}
+    .rail.left{border-right:0;border-bottom:1px solid var(--line)}
+    .rail.right{border-left:0;border-top:1px solid var(--line)}
+    .brand .sub{display:none}
+    header{flex-wrap:wrap;gap:10px}
+    .search input{width:90px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+  /* login gate */
+  .login{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:24px;
+    background:radial-gradient(900px 500px at 50% -10%,#16222e,transparent 60%),var(--bg)}
+  .login-card{width:100%;max-width:360px;background:linear-gradient(180deg,#141d26,#0e151b);border:1px solid var(--line);
+    border-radius:16px;padding:26px 22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .login-brand{display:flex;align-items:baseline;gap:10px;justify-content:center}
+  .login-brand h1{font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-size:24px;margin:0}
+  .login-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:4px 0 20px}
+  #loginMsg .msg{margin:0 0 12px}
+</style>
+</head>
+<body>
+<!-- Login gate -->
+<div class="login" id="login">
+  <div class="login-card">
+    <div class="login-brand"><h1>Depot Control</h1><span class="ver" id="loginVer">v1</span></div>
+    <p class="login-sub">Technician sign-in</p>
+    <div class="field"><label>Username</label>
+      <input id="loginUser" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username"></div>
+    <div class="field"><label>Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password"></div>
+    <div id="loginMsg"></div>
+    <button class="btn primary" id="loginBtn" style="width:100%;justify-content:center;margin-top:6px">Sign in</button>
+  </div>
+</div>
+
+
+<header>
+  <div class="brand">
+    <h1>Depot Control</h1>
+    <span class="ver" id="appVer">v1</span>
+    <span class="sub" id="depotSub">Stabling diagram</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="search"><span style="color:var(--ink-faint);font-family:var(--mono);font-size:12px">⌕</span>
+    <input id="search" placeholder="find unit…" autocomplete="off"></div>
+  <span class="clock" id="clock">—</span>
+  <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
+  <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
+  <button class="btn icon" id="refreshBtn" title="Refresh now">⟳</button>
+  <button class="btn icon" id="cfgBtn" title="Connection settings">⚙</button>
+</header>
+
+<main>
+  <aside class="rail left">
+    <p class="panel-title">Yard summary</p>
+    <div class="stat"><span class="v" id="sTrains">0</span><span class="k">units stabled</span></div>
+    <div class="stat"><span class="v small" id="sBerths">0 / 0</span><span class="k">berths occupied</span></div>
+    <div class="stat"><span class="v small" id="sFaults">0</span><span class="k">flagged / fault</span></div>
+    <div class="stat"><span class="v small" id="sDepart">0</span><span class="k">due to depart</span></div>
+    <div class="legend">
+      <p class="panel-title" style="margin-bottom:8px">Status key</p>
+      <div class="row"><span class="chip" style="background:var(--green)"></span>Stabled</div>
+      <div class="row"><span class="chip" style="background:var(--cyan)"></span>Prepared</div>
+      <div class="row"><span class="chip" style="background:var(--violet)"></span>Cleaning</div>
+      <div class="row"><span class="chip" style="background:var(--amber)"></span>Departing</div>
+      <div class="row"><span class="chip" style="background:var(--red)"></span>Fault / hold</div>
+    </div>
+  </aside>
+
+  <section class="yard"><div id="yard"></div></section>
+
+  <aside class="rail right" id="rightRail">
+    <p class="panel-title">Other locations / faults</p>
+    <div class="rail-group">
+      <div class="rail-gh">Other locations <span style="display:flex;align-items:center;gap:8px"><button class="addbtn" id="addOther">+ add</button><span class="cnt" id="otherCount">0</span></span></div>
+      <div class="rail-list" id="otherList"></div>
+    </div>
+    <div class="rail-group">
+      <div class="rail-gh">Faults &amp; holds <span style="display:flex;align-items:center;gap:8px"><button class="addbtn" id="addFault">+ add</button><span class="cnt" id="faultCount">0</span></span></div>
+      <div class="rail-list" id="faultList"></div>
+    </div>
+  </aside>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+  <header><h3>Connection</h3></header>
+  <div class="body">
+    <div class="toggle group" style="display:flex;align-items:center">
+      <div>
+        <div style="font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-size:13px">Live data</div>
+        <div class="hint" style="margin-top:3px">Off = sample depot. On = query Back4App.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="liveToggle"><span class="slide"></span></label>
+    </div>
+    <div class="group">
+      <p class="gh">Back4App credentials</p>
+      <div class="field"><label>Server URL</label><input id="cServer" value="https://parseapi.back4app.com/"></div>
+      <div class="field"><label>Application ID</label><input id="cAppId" placeholder="your App ID"></div>
+      <div class="field"><label>JavaScript Key</label><input id="cJsKey" placeholder="your JavaScript Key"></div>
+    </div>
+    <div class="group">
+      <p class="gh">Data class &amp; fields</p>
+      <div class="field"><label>Class name</label><input id="fClass" value="TrainLocation"></div>
+      <div class="grid2">
+        <div class="field"><label>Unit / set field</label><input id="fUnit" value="unit"></div>
+        <div class="field"><label>Road field</label><input id="fRoad" value="road"></div>
+        <div class="field"><label>Berth field</label><input id="fBerth" value="berth"></div>
+        <div class="field"><label>Status field</label><input id="fStatus" value="status"></div>
+      </div>
+      <div class="field"><label>Detail field (optional)</label><input id="fDetail" value="destination"></div>
+      <div class="hint">A record is placed by matching its <b>road</b> to a road label, then its <b>berth</b> to A/B/C/D. Single-berth roads (e.g. 15) take any unit on that road. Anything that doesn’t match a berth is listed under “Unplaced units”.</div>
+    </div>
+    <div class="group">
+      <p class="gh">Refresh</p>
+      <div class="field"><label>Auto-refresh every (seconds, 0 = off)</label><input id="fPoll" type="number" min="0" value="15"></div>
+    </div>
+    <div id="cfgMsg"></div>
+  </div>
+  <div class="foot">
+    <button class="btn primary" id="applyBtn">Apply &amp; connect</button>
+    <button class="btn" id="closeBtn">Close</button>
+  </div>
+</div>
+
+<!-- Berth editor -->
+<div class="scrim" id="editScrim"></div>
+<div class="modal" id="editModal">
+  <div class="modal-head">
+    <div>
+      <div class="modal-eyebrow" id="editLoc">Road — · Berth —</div>
+      <h3 id="editTitle">Edit berth</h3>
+    </div>
+    <button class="btn icon" id="editClose" title="Close">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="field" id="editLocField" style="display:none"><label>Location</label><input id="editLocInput" placeholder="e.g. Carriage Wash" autocomplete="off"></div>
+    <div class="field"><label>Unit / set number</label><input id="editUnit" placeholder="e.g. 700112" autocomplete="off"></div>
+    <div class="field"><label>Status</label>
+      <select id="editStatus">
+        <option value="Stabled">Stabled</option>
+        <option value="Prepared">Prepared</option>
+        <option value="Cleaning">Cleaning</option>
+        <option value="Departing">Departing</option>
+        <option value="Fault">Fault / hold</option>
+      </select>
+    </div>
+    <div class="field"><label>Detail / destination</label><input id="editDetail" placeholder="e.g. 07:14 Brighton" autocomplete="off"></div>
+    <div id="editMsg"></div>
+    <div class="hint" id="editScope"></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn danger" id="editClear">Clear berth</button>
+    <span style="flex:1"></span>
+    <button class="btn" id="editCancel">Cancel</button>
+    <button class="btn primary" id="editSave">Save changes</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   APP VERSION — bump this on every change.
+   ============================================================ */
+const APP_VERSION = "2";
+
+/* ============================================================
+   LOGIN — one shared account for all technicians (no signup).
+   mode "parse"  -> sign in against a Back4App user you create ONCE; lock the
+                    class to "requires authentication" so the login is enforced.
+                    Needs CONFIG.live + keys below.
+   mode "simple" -> username/password checked in the browser (deterrent only,
+                    NOT secure). Used as the fallback when live keys aren't set.
+   ============================================================ */
+const AUTH = {
+  mode: "parse",
+  user: "technician",
+  pass: "change-this"
+};
+/* ============================================================
+   1) DEPOT LAYOUT  — edit road labels / berths to match your yard.
+      kind:"plain"  -> berths laid out left→right
+      kind:"depot"  -> first & last berth OUTSIDE, middle berths UNDER COVER
+      single:true   -> one berth; any unit on that road is placed here
+   ============================================================ */
+const LAYOUT = [
+  { section:"Stabling Roads", note:"roads 1–9 · berths A B C D", kind:"plain",
+    roads:[1,2,3,4,5,6,7,8,9].map(n=>({label:String(n), berths:["A","B","C","D"]})) },
+
+  { section:"Depot", note:"4 roads · A/D outside · B/C under cover", kind:"depot",
+    roads:["10","11","12","13"].map(n=>({label:n, berths:["A","B","C","D"]})) },
+
+  { section:"West Yard", note:"roads 15–22", kind:"plain",
+    roads:[
+      {label:"15", berths:["D"], single:true},
+      {label:"16", berths:["B","C","D"]},
+      {label:"17", berths:["B","C","D"]},
+      {label:"18", berths:["B","C","D"]},
+      {label:"19", berths:["B","C","D"]},
+      {label:"20", berths:["B","C","D"]},
+      {label:"21", berths:["B","C","D"]},
+      {label:"22", berths:["B","C","D"]},
+    ] },
+];
+
+/* ============================================================
+   2) CONNECTION — hardcode here, or use the ⚙ drawer. No browser storage used.
+   ============================================================ */
+const CONFIG = {
+  live:true,
+  serverURL:"https://parseapi.back4app.com/",
+  appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM",
+  className:"TrainLocation",
+  fields:{ unit:"unit", road:"road", berth:"berth", status:"status", detail:"destination" },
+  pollSeconds:15,
+  depotName:"Stabling diagram"
+};
+
+/* ---------- status ---------- */
+const STATUS = {
+  stabled:{label:"Stabled",color:"var(--green)"},
+  prepared:{label:"Prepared",color:"var(--cyan)"},
+  cleaning:{label:"Cleaning",color:"var(--violet)"},
+  departing:{label:"Departing",color:"var(--amber)"},
+  fault:{label:"Fault",color:"var(--red)"}
+};
+function normStatus(raw){
+  const s=(raw||"").toString().toLowerCase();
+  if(/fault|hold|defect|fail/.test(s)) return "fault";
+  if(/clean|wash|valet/.test(s)) return "cleaning";
+  if(/prep|ready|service/.test(s)) return "prepared";
+  if(/depart|out|move|book/.test(s)) return "departing";
+  return "stabled";
+}
+
+/* ---------- sample data (spans the real layout) ---------- */
+function sampleData(){
+  const t=(unit,road,berth,status,detail)=>({unit,road,berth,status,detail});
+  return [
+    t("700112","1","A","Stabled","07:14 Brighton"), t("700045","1","B","Stabled","08:02 Bedford"),
+    t("387145","1","C","Prepared","06:48 Cambridge"),
+    t("700131","2","A","Stabled","—"), t("700088","2","C","Cleaning","Interior valet"), t("700076","2","D","Stabled","09:10 Brighton"),
+    t("387112","3","B","Fault","Door fault — held"), t("700009","3","D","Stabled","—"),
+    t("700154","4","A","Stabled","—"), t("387101","4","B","Prepared","07:22 Cambridge"), t("700063","4","C","Stabled","—"), t("700099","4","D","Stabled","—"),
+    t("700120","5","A","Departing","06:31 St Pancras"),
+    t("700055","6","B","Stabled","—"), t("700144","6","C","Stabled","—"),
+    t("387133","8","A","Stabled","10:05 Bedford"), t("700200","8","D","Stabled","—"),
+    t("700210","9","C","Prepared","07:40 Kings Cross"),
+    /* depot */
+    t("700301","10","A","Stabled","—"), t("700302","10","B","Cleaning","Exterior wash"), t("700303","10","C","Cleaning","Interior"), t("700304","10","D","Stabled","—"),
+    t("387050","11","B","Fault","Traction fault"), t("700310","11","C","Prepared","08:15 Brighton"),
+    t("700320","12","A","Departing","06:40 Three Bridges"), t("700321","12","B","Stabled","—"), t("700322","12","D","Stabled","—"),
+    /* west yard */
+    t("700400","15","D","Stabled","—"),
+    t("700410","16","B","Stabled","—"), t("700411","16","C","Stabled","—"),
+    t("387060","17","B","Prepared","07:05 Bedford"), t("700420","17","C","Stabled","—"), t("700421","17","D","Stabled","—"),
+    t("700430","19","C","Fault","Brake fault — held"),
+    t("700440","20","B","Stabled","—"), t("700441","20","C","Stabled","—"), t("700442","20","D","Stabled","—"),
+    t("700450","21","D","Departing","06:55 Gatwick"),
+    t("700460","22","B","Stabled","—"), t("700461","22","C","Stabled","—"), t("700462","22","D","Stabled","—"),
+    /* other locations (roads not on the diagram) */
+    t("387200","Reception","","Stabled","Awaiting berth"),
+    t("700500","Carriage Wash","","Cleaning","Auto wash"),
+    t("700510","Fuel Point","","Fault","Refuel — AdBlue fault"),
+    t("387210","Main Line","","Departing","06:18 to service"),
+  ];
+}
+
+/* ---------- state ---------- */
+let state={ rows:[], mode:"demo", error:"", lastUpdated:null, highlight:"" };
+let pollTimer=null, parseReady=false;
+const $=id=>document.getElementById(id);
+const yardEl=$("yard");
+const escapeHtml=s=>(s+"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- indexing ---------- */
+function buildIndex(rows){
+  const idx={};
+  rows.forEach(r=>{
+    r.__placed=false;
+    const road=(r.road??"").toString().trim().toLowerCase();
+    const berth=(r.berth??"").toString().trim().toUpperCase();
+    if(!idx[road]) idx[road]={byBerth:{},list:[]};
+    idx[road].list.push(r);
+    if(berth) idx[road].byBerth[berth]=r;
+  });
+  return idx;
+}
+function takeTrain(idx,roadLabel,berthLabel,single){
+  const road=idx[roadLabel.toString().trim().toLowerCase()];
+  if(!road) return null;
+  let train=null;
+  if(single) train=road.list.find(x=>!x.__placed)||null;
+  else train=road.byBerth[berthLabel.toString().toUpperCase()]||null;
+  if(train) train.__placed=true;
+  return train;
+}
+
+/* ---------- slot ---------- */
+function slotEl(train,berthLabel,extraClass){
+  const hl=state.highlight.trim().toLowerCase();
+  const slot=document.createElement("div");
+  slot.className="slot "+(extraClass||"");
+  if(train){
+    const key=normStatus(train.status), st=STATUS[key];
+    slot.classList.add("filled"); if(key==="departing") slot.classList.add("departing");
+    slot.style.setProperty("--st",st.color);
+    const unit=(train.unit??"???").toString();
+    const detail=(train.detail&&train.detail!=="—")?train.detail:st.label;
+    slot.innerHTML=`<span class="berth-tag">${escapeHtml(berthLabel)}</span>
+      <span class="unit">${escapeHtml(unit)}</span>
+      <span class="meta"><i class="st-dot"></i>${escapeHtml(detail)}</span>`;
+    slot.title=unit+" · road "+train.road+(train.berth?(" ·  berth "+train.berth):"")+" · "+st.label;
+    if(hl){ unit.toLowerCase().includes(hl)?slot.classList.add("hit"):slot.classList.add("dim"); }
+  }else{
+    slot.classList.add("empty");
+    slot.innerHTML=`<span class="berth-tag">${escapeHtml(berthLabel)}</span><span class="empty-lbl">clear</span>`;
+  }
+  return slot;
+}
+
+/* ---------- render ---------- */
+function render(){
+  yardEl.innerHTML="";
+  const idx=buildIndex(state.rows);
+  let totalBerths=0, occupied=0;
+
+  LAYOUT.forEach(sec=>{
+    const wrap=document.createElement("div"); wrap.className="section";
+    wrap.innerHTML=`<div class="section-head"><h2>${escapeHtml(sec.section)}</h2><span class="meta">${escapeHtml(sec.note||"")}</span><span class="rule"></span></div>`;
+
+    sec.roads.forEach(road=>{
+      const row=document.createElement("div"); row.className="road";
+      const lbl=document.createElement("div"); lbl.className="road-label";
+      lbl.innerHTML=road.label+`<small>${road.single?"1 berth":road.berths.length+" berths"}</small>`;
+
+      const track=document.createElement("div"); track.className="track";
+      track.innerHTML='<span class="throat" title="Entry throat"></span>';
+
+      const makeSlot=(b,cls)=>{
+        totalBerths++;
+        const train=takeTrain(idx,road.label,b,road.single);
+        if(train) occupied++;
+        const el=slotEl(train,road.single?"":b,cls);
+        el.classList.add("editable");
+        if(!train) el.title="Click to assign a unit";
+        else el.title="Click to edit";
+        el.addEventListener("click",()=>openBerthEditor(road.label,b,road.single,train));
+        return el;
+      };
+
+      if(sec.kind==="depot" && road.berths.length>=3){
+        track.appendChild(makeSlot(road.berths[0],"outside"));
+        const shed=document.createElement("div"); shed.className="shed";
+        road.berths.slice(1,-1).forEach(b=>shed.appendChild(makeSlot(b,"inside")));
+        track.appendChild(shed);
+        track.appendChild(makeSlot(road.berths[road.berths.length-1],"outside"));
+      }else{
+        road.berths.forEach(b=>track.appendChild(makeSlot(b)));
+      }
+
+      const buffer=document.createElement("div"); buffer.className="buffer";
+      buffer.innerHTML='<i></i><span>STOP</span>'; track.appendChild(buffer);
+
+      row.appendChild(lbl); row.appendChild(track); wrap.appendChild(row);
+    });
+    yardEl.appendChild(wrap);
+  });
+
+  // classify leftover units
+  const roadSet=new Set(LAYOUT.flatMap(s=>s.roads.map(r=>r.label.toString().trim().toLowerCase())));
+  const roadKey=r=>(r.road??"").toString().trim().toLowerCase();
+  const others=state.rows.filter(r=>!roadSet.has(roadKey(r)));
+  const unplacedKnown=state.rows.filter(r=>!r.__placed && roadSet.has(roadKey(r)));
+  const faults=state.rows.filter(r=>normStatus(r.status)==="fault");
+
+  if(unplacedKnown.length){
+    const u=document.createElement("div"); u.className="unplaced";
+    u.innerHTML=`<h4>Unplaced · berth not matched · ${unplacedKnown.length}</h4><div class="row">`+
+      unplacedKnown.map(r=>`<span class="utag"><b>${escapeHtml((r.unit??"?").toString())}</b> road ${escapeHtml((r.road??"?").toString())}${r.berth?(" · "+escapeHtml(r.berth.toString())):""}</span>`).join("")+
+      `</div><div class="hint" style="margin-top:8px">Road is on the diagram but the berth value didn’t match A/B/C/D (or the road was already full). Check the berth field.</div>`;
+    yardEl.appendChild(u);
+  }
+  renderRightRail(others,faults);
+
+  // stats
+  const norm=state.rows.map(r=>normStatus(r.status));
+  $("sTrains").textContent=state.rows.length;
+  $("sBerths").textContent=occupied+" / "+totalBerths;
+  $("sFaults").textContent=norm.filter(s=>s==="fault").length;
+  $("sDepart").textContent=norm.filter(s=>s==="departing").length;
+
+  const pill=$("statusPill"), txt=$("statusText");
+  pill.className="status-pill "+(state.mode==="live"?"live":state.mode==="error"?"err":"demo");
+  txt.textContent=state.mode==="live"?"Live · Back4App":state.mode==="error"?"Connection error":"Sample data";
+  $("depotSub").textContent=state.mode==="live"?CONFIG.className:CONFIG.depotName;
+}
+
+/* ---------- right rail ---------- */
+let lastOthers=[], lastFaults=[];
+function renderRightRail(others,faults){
+  lastOthers=others; lastFaults=faults;
+  const hl=state.highlight.trim().toLowerCase();
+  $("otherCount").textContent=others.length;
+  $("faultCount").textContent=faults.length;
+  const item=(r,reason,list,i)=>{
+    const st=STATUS[normStatus(r.status)];
+    const unit=(r.unit??"?").toString();
+    const cls=hl?(unit.toLowerCase().includes(hl)?" hit":" dim"):"";
+    return `<div class="ritem editable${cls}" data-list="${list}" data-idx="${i}" style="--st:${st.color}" title="${escapeHtml(unit+" · "+reason+" · click to edit")}">`+
+      `<i class="st-dot"></i><span class="ru">${escapeHtml(unit)}</span>`+
+      `<span class="rr">${escapeHtml(reason)}</span></div>`;
+  };
+  $("otherList").innerHTML = others.length
+    ? others.map((r,i)=>item(r,(r.road??"?").toString()+(r.berth?(" · "+r.berth):""),"other",i)).join("")
+    : `<div class="rempty">All units are on the diagram.</div>`;
+  $("faultList").innerHTML = faults.length
+    ? faults.map((r,i)=>{
+        const loc=(r.road??"?").toString()+(r.berth?(" "+r.berth):"");
+        const why=(r.detail&&r.detail!=="—")?r.detail:"Fault / hold";
+        return item(r, loc+" — "+why,"fault",i);
+      }).join("")
+    : `<div class="rempty">No active faults.</div>`;
+}
+function railClick(e){
+  const el=e.target.closest(".ritem"); if(!el) return;
+  const list=el.dataset.list==="other"?lastOthers:lastFaults;
+  const row=list[+el.dataset.idx]; if(row) openRowEditor(row);
+}
+
+/* ---------- clock ---------- */
+function tick(){
+  $("clock").textContent=state.lastUpdated
+    ? "updated "+state.lastUpdated.toLocaleTimeString([], {hour12:false})
+    : new Date().toLocaleTimeString([], {hour12:false});
+}
+setInterval(tick,1000);
+
+/* ---------- unit editor (berths + off-diagram locations) ---------- */
+let editCtx=null;
+const statusLabel=k=>STATUS[k]?STATUS[k].label:"Stabled";
+
+function roadInfo(roadLabel){
+  const key=(roadLabel??"").toString().trim().toLowerCase();
+  for(const s of LAYOUT){
+    for(const r of s.roads){
+      if(r.label.toString().trim().toLowerCase()===key)
+        return {found:true, single:!!r.single, firstBerth:r.berths[0]};
+    }
+  }
+  return {found:false};
+}
+// route a unit from the rails to the right editor
+function openRowEditor(row){
+  const info=roadInfo(row.road);
+  if(info.found) openBerthEditor(row.road, row.berth||info.firstBerth, info.single, row);
+  else openLocationEditor(row);
+}
+
+function scopeText(){
+  return CONFIG.live
+    ? "Saving will write to the “"+CONFIG.className+"” class in Back4App."
+    : "Live data is off — changes stay in this view. Turn on Live (⚙) to write to Back4App.";
+}
+
+function openBerthEditor(road,berth,single,train){
+  editCtx={mode:"slot",road,berth,single,row:train||null};
+  $("editLocField").style.display="none";
+  $("editLoc").textContent="Road "+road+(single?"":" · Berth "+berth);
+  $("editTitle").textContent=train?"Edit berth":"Assign unit";
+  $("editClear").textContent="Clear berth";
+  fillEditor(train);
+}
+function openLocationEditor(row,presetStatus){
+  editCtx={mode:"location",row:row||null};
+  $("editLocField").style.display="";
+  $("editLocInput").value=row?(row.road??"").toString():"";
+  $("editLoc").textContent=presetStatus==="Fault"&&!row?"Fault / hold · location":"Location";
+  $("editTitle").textContent=row?"Edit unit":(presetStatus==="Fault"?"Add fault / hold":"Add unit");
+  $("editClear").textContent="Remove unit";
+  fillEditor(row);
+  if(!row && presetStatus) $("editStatus").value=presetStatus;
+}
+function fillEditor(row){
+  $("editUnit").value=row?(row.unit??"").toString():"";
+  $("editStatus").value=row?statusLabel(normStatus(row.status)):"Stabled";
+  $("editDetail").value=(row&&row.detail&&row.detail!=="—")?row.detail:"";
+  $("editClear").style.display=row?"":"none";
+  $("editScope").textContent=scopeText();
+  $("editMsg").innerHTML="";
+  $("editScrim").classList.add("open"); $("editModal").classList.add("open");
+  const first = editCtx.mode==="location" && !row ? "editLocInput" : "editUnit";
+  setTimeout(()=>$(first).focus(),60);
+}
+function closeEdit(){ $("editScrim").classList.remove("open"); $("editModal").classList.remove("open"); editCtx=null; }
+function setEditMsg(k,t){ $("editMsg").innerHTML='<div class="msg '+k+'">'+escapeHtml(t)+'</div>'; }
+
+function findRowAt(road,berth,single){
+  const rk=s=>(s??"").toString().trim().toLowerCase();
+  return state.rows.find(r=> rk(r.road)===rk(road) &&
+    (single || (r.berth??"").toString().trim().toUpperCase()===berth.toString().toUpperCase()));
+}
+
+async function commit(clear){
+  if(!editCtx) return;
+  const f=CONFIG.fields;
+  const unit=$("editUnit").value.trim();
+  const status=$("editStatus").value;
+  const detail=$("editDetail").value.trim();
+
+  // resolve where this unit lives + which existing record it maps to
+  let road, berth, existing;
+  if(editCtx.mode==="location"){
+    road=$("editLocInput").value.trim();
+    existing=editCtx.row||null;
+    berth=existing?(existing.berth||""):"";
+    if(!clear && unit && !road){ setEditMsg("bad","Enter a location name."); return; }
+    if(!road && existing) road=existing.road;
+  }else{
+    road=editCtx.road; berth=editCtx.berth;
+    existing=findRowAt(road,berth,editCtx.single);
+  }
+  const doClear = clear || !unit;
+
+  if(CONFIG.live){
+    setEditMsg("info", doClear?"Removing in Back4App…":"Saving to Back4App…");
+    try{
+      if(typeof Parse==="undefined") throw new Error("Parse SDK not loaded.");
+      if(!CONFIG.appId||!CONFIG.jsKey) throw new Error("Add your App ID and JavaScript Key in ⚙ Connection first.");
+      if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+
+      if(doClear){
+        if(existing && existing.__obj) await existing.__obj.destroy();
+        if(existing) state.rows=state.rows.filter(r=>r!==existing);
+      }else if(existing && existing.__obj){
+        existing.__obj.set(f.unit,unit); existing.__obj.set(f.status,status);
+        existing.__obj.set(f.road,road); existing.__obj.set(f.berth,berth);
+        if(f.detail) existing.__obj.set(f.detail, detail||null);
+        await existing.__obj.save();
+        Object.assign(existing,{unit,status,detail,road,berth});
+      }else{
+        const o=new Parse.Object(CONFIG.className);
+        o.set(f.unit,unit); o.set(f.road,road); o.set(f.berth,berth); o.set(f.status,status);
+        if(f.detail) o.set(f.detail, detail||null);
+        await o.save();
+        if(existing) Object.assign(existing,{unit,status,detail,road,berth,__obj:o,id:o.id});
+        else state.rows.push({unit,road,berth,status,detail,__obj:o,id:o.id});
+      }
+      state.lastUpdated=new Date(); render();
+      setEditMsg("ok", doClear?"Removed and saved.":"Saved to Back4App.");
+      setTimeout(closeEdit,650);
+    }catch(err){
+      setEditMsg("bad","Back4App rejected the write: "+(err.message||err)+
+        "\n\nThe class must allow public Create/Update/Delete (Back4App → your class → Security). Do not put the Master Key in this page.");
+    }
+  }else{
+    if(doClear){ if(existing) state.rows=state.rows.filter(r=>r!==existing); }
+    else if(existing){ Object.assign(existing,{unit,status,detail,road,berth}); }
+    else state.rows.push({unit,road,berth,status,detail});
+    state.lastUpdated=new Date(); render();
+    setEditMsg("info","Updated in this view. Turn on Live data (⚙) to send it to Back4App.");
+    setTimeout(closeEdit,800);
+  }
+}
+
+/* ---------- loaders ---------- */
+function loadDemo(){ state.rows=sampleData(); state.mode="demo"; state.error=""; state.lastUpdated=new Date(); render(); }
+async function loadLive(){
+  if(typeof Parse==="undefined"){ state.mode="error"; render(); setMsg("bad","Parse SDK failed to load (offline or blocked)."); return; }
+  try{
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    const f=CONFIG.fields;
+    const q=new Parse.Query(CONFIG.className); q.limit(1000);
+    const res=await q.find();
+    state.rows=res.map(o=>({ unit:o.get(f.unit), road:o.get(f.road), berth:o.get(f.berth), status:o.get(f.status), detail:f.detail?o.get(f.detail):null, __obj:o, id:o.id }));
+    state.mode="live"; state.error=""; state.lastUpdated=new Date(); render();
+    setMsg("ok","Connected. Loaded "+state.rows.length+" unit"+(state.rows.length===1?"":"s")+" from “"+CONFIG.className+"”.");
+  }catch(err){
+    state.mode="error"; render();
+    setMsg("bad","Couldn’t reach Back4App: "+(err.message||err)+"\n\nCheck App ID, JavaScript Key, class name and read permissions.");
+  }
+}
+function refresh(){ CONFIG.live?loadLive():loadDemo(); }
+function restartPolling(){
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  const s=Number(CONFIG.pollSeconds)||0;
+  if(CONFIG.live && s>0) pollTimer=setInterval(loadLive,s*1000);
+}
+
+/* ---------- drawer ---------- */
+function setMsg(k,t){ $("cfgMsg").innerHTML='<div class="msg '+k+'">'+escapeHtml(t)+'</div>'; }
+function openCfg(){ syncForm(); $("scrim").classList.add("open"); $("drawer").classList.add("open"); }
+function closeCfg(){ $("scrim").classList.remove("open"); $("drawer").classList.remove("open"); }
+function syncForm(){
+  $("liveToggle").checked=CONFIG.live; $("cServer").value=CONFIG.serverURL;
+  $("cAppId").value=CONFIG.appId; $("cJsKey").value=CONFIG.jsKey;
+  $("fClass").value=CONFIG.className; $("fUnit").value=CONFIG.fields.unit;
+  $("fRoad").value=CONFIG.fields.road; $("fBerth").value=CONFIG.fields.berth;
+  $("fStatus").value=CONFIG.fields.status; $("fDetail").value=CONFIG.fields.detail||"";
+  $("fPoll").value=CONFIG.pollSeconds;
+}
+function applyConfig(){
+  CONFIG.live=$("liveToggle").checked;
+  CONFIG.serverURL=$("cServer").value.trim();
+  CONFIG.appId=$("cAppId").value.trim(); CONFIG.jsKey=$("cJsKey").value.trim();
+  CONFIG.className=$("fClass").value.trim()||"TrainLocation";
+  CONFIG.fields={ unit:$("fUnit").value.trim()||"unit", road:$("fRoad").value.trim()||"road",
+    berth:$("fBerth").value.trim()||"berth", status:$("fStatus").value.trim()||"status", detail:$("fDetail").value.trim() };
+  CONFIG.pollSeconds=Math.max(0,Number($("fPoll").value)||0);
+  parseReady=false;
+  if(CONFIG.live){
+    if(!CONFIG.appId||!CONFIG.jsKey){ setMsg("bad","Enter your Application ID and JavaScript Key to go live."); return; }
+    setMsg("info","Connecting to Back4App…"); loadLive().then(restartPolling);
+  }else{ setMsg("info","Live data off — showing the sample depot."); loadDemo(); restartPolling(); }
+}
+
+/* ---------- login ---------- */
+let authed=false;
+function isParseLogin(){ return AUTH.mode==="parse" && CONFIG.live && CONFIG.appId && CONFIG.jsKey; }
+function ensureParse(){ if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; } }
+function loginMsg(k,t){ $("loginMsg").innerHTML=t?'<div class="msg '+k+'">'+escapeHtml(t)+'</div>':""; }
+function showLogin(){ $("login").style.display="flex"; setTimeout(()=>$("loginUser").focus(),60); }
+function startData(){ if(CONFIG.live && CONFIG.appId && CONFIG.jsKey){ loadLive().then(restartPolling); } else { loadDemo(); } }
+function unlock(){ authed=true; $("login").style.display="none"; $("signOutBtn").style.display=""; startData(); }
+
+async function doLogin(){
+  const u=$("loginUser").value.trim(), p=$("loginPass").value;
+  if(!u||!p){ loginMsg("bad","Enter username and password."); return; }
+  if(isParseLogin()){
+    loginMsg("info","Signing in…");
+    try{ ensureParse(); await Parse.User.logIn(u,p); loginMsg("",""); unlock(); }
+    catch(err){ loginMsg("bad","Sign-in failed: "+(err.message||err)); }
+  }else{
+    if(u===AUTH.user && p===AUTH.pass){ loginMsg("",""); unlock(); }
+    else loginMsg("bad","Incorrect username or password.");
+  }
+}
+async function signOut(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+  if(isParseLogin()){ try{ await Parse.User.logOut(); }catch(e){} }
+  authed=false; $("signOutBtn").style.display="none"; $("loginPass").value="";
+  showLogin();
+}
+
+/* ---------- events ---------- */
+$("cfgBtn").onclick=openCfg; $("closeBtn").onclick=closeCfg; $("scrim").onclick=closeCfg;
+$("applyBtn").onclick=applyConfig; $("refreshBtn").onclick=refresh;
+$("search").addEventListener("input",e=>{ state.highlight=e.target.value; render(); });
+$("editSave").onclick=()=>commit(false);
+$("editClear").onclick=()=>commit(true);
+$("editCancel").onclick=closeEdit; $("editClose").onclick=closeEdit; $("editScrim").onclick=closeEdit;
+$("editUnit").addEventListener("keydown",e=>{ if(e.key==="Enter") commit(false); });
+$("otherList").addEventListener("click",railClick);
+$("faultList").addEventListener("click",railClick);
+$("addOther").onclick=()=>openLocationEditor(null);
+$("addFault").onclick=()=>openLocationEditor(null,"Fault");
+$("loginBtn").onclick=doLogin;
+$("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("loginPass").focus(); });
+$("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+$("signOutBtn").onclick=signOut;
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeCfg(); closeEdit(); } });
+
+/* ---------- boot ---------- */
+(function init(){
+  $("appVer").textContent="v"+APP_VERSION;
+  $("loginVer").textContent="v"+APP_VERSION;
+  tick();
+  if(isParseLogin()){
+    try{ ensureParse(); if(Parse.User.current()) unlock(); else showLogin(); }
+    catch(e){ showLogin(); }
+  }else{
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

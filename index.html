@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0c1116">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Unit Lookup — Depot Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
+<style>
+  :root{
+    --bg:#0c1116; --panel:#141c24; --panel-2:#1b2630;
+    --rail:#37475a; --rail-lit:#5a7186; --line:#243140;
+    --ink:#e9eef3; --ink-dim:#8a9bab; --ink-faint:#5d6e7d;
+    --green:#33c977; --cyan:#39c5d6; --amber:#e8a838; --red:#e8554e; --violet:#9a8cf0;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --cond:"Barlow Condensed",system-ui,sans-serif;
+    --body:"Inter",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:radial-gradient(1100px 500px at 80% -10%,#16222e 0,transparent 60%),var(--bg);
+    color:var(--ink);font-family:var(--body);font-size:15px;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+  header{display:flex;align-items:center;gap:14px;padding:14px 20px;padding-top:calc(14px + env(safe-area-inset-top));
+    padding-left:calc(20px + env(safe-area-inset-left));padding-right:calc(20px + env(safe-area-inset-right));
+    border-bottom:1px solid var(--line);background:linear-gradient(var(--panel),#10171e);position:sticky;top:0;z-index:20}
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand h1{font-family:var(--cond);font-weight:700;letter-spacing:.09em;text-transform:uppercase;font-size:19px;margin:0}
+  .ver{font-family:var(--mono);font-size:10px;color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:2px 7px}
+  .spacer{flex:1}
+  .status-pill{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;padding:6px 12px;
+    border:1px solid var(--line);border-radius:999px;background:var(--panel-2)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ink-faint)}
+  .status-pill.live .dot{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .status-pill.demo .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+  .status-pill.err .dot{background:var(--red);box-shadow:0 0 8px var(--red)}
+  .btn{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:14px;
+    color:var(--ink);background:var(--panel-2);border:1px solid var(--line);padding:0 16px;min-height:46px;border-radius:10px;
+    cursor:pointer;transition:.15s;display:inline-flex;align-items:center;justify-content:center;touch-action:manipulation}
+  .btn:active{transform:scale(.98)}
+  .btn:hover{border-color:var(--rail-lit);background:#22303d}
+  .btn.icon{padding:0 13px;min-width:46px}
+  .btn.primary{background:var(--green);color:#06140c;border-color:transparent}
+  .btn.primary:hover{background:#43d986}
+  .btn.danger{color:#f0a8a4;border-color:rgba(232,85,78,.4);background:rgba(232,85,78,.08)}
+  .btn.danger:hover{border-color:var(--red)}
+
+  main{max-width:680px;margin:0 auto;padding:30px 18px 60px}
+  .hero{margin:18px 0 22px}
+  .hero h2{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:26px;margin:0 0 4px}
+  .hero p{color:var(--ink-dim);margin:0;font-size:14px}
+  .searchbar{display:flex;gap:10px;margin:18px 0}
+  .searchbar input{flex:1;background:#0c131a;border:1px solid var(--line);border-radius:10px;color:var(--ink);
+    font-family:var(--mono);font-size:18px;padding:14px 16px;outline:none}
+  .searchbar input:focus{border-color:var(--rail-lit)}
+  .searchbar .btn{font-size:15px;padding:0 20px}
+
+  .results{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .rcard{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;cursor:pointer;
+    background:linear-gradient(180deg,var(--panel-2),#16202a);border:1px solid var(--line);border-left:3px solid var(--st);
+    border-radius:10px;padding:12px 14px;transition:.12s}
+  .rcard:hover{border-color:var(--st);transform:translateX(2px)}
+  .rcard .u{font-family:var(--mono);font-weight:700;font-size:17px}
+  .rcard .loc{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
+  .rcard .stbadge{font-family:var(--mono);font-size:11px;color:var(--st);border:1px solid var(--st);border-radius:999px;padding:2px 9px;white-space:nowrap}
+  .rcard .st-dot{width:9px;height:9px;border-radius:50%;background:var(--st);box-shadow:0 0 8px var(--st)}
+
+  .note{font-family:var(--mono);font-size:13px;color:var(--ink-faint);padding:18px 4px;text-align:center}
+
+  /* edit card */
+  .editor{margin-top:18px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#141d26,#0e151b);overflow:hidden}
+  .editor-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+  .editor-head .who{font-family:var(--mono);font-weight:700;font-size:20px}
+  .editor-head .loc{font-family:var(--mono);font-size:12px;color:var(--cyan);margin-top:2px}
+  .editor-body{padding:16px 18px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-size:11px;color:var(--ink-dim);margin-bottom:5px}
+  .field input,.field select{width:100%;background:#0c131a;border:1px solid var(--line);border-radius:10px;color:var(--ink);
+    font-family:var(--mono);font-size:16px;padding:13px 13px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--rail-lit)}
+  .editor-foot{display:flex;align-items:center;gap:10px;padding:14px 18px 18px}
+  .msg{font-family:var(--mono);font-size:12.5px;line-height:1.5;padding:11px 13px;border-radius:8px;margin:0 18px 16px;white-space:pre-wrap}
+  .msg.ok{background:rgba(51,201,119,.1);color:#9fe7bd;border:1px solid rgba(51,201,119,.3)}
+  .msg.bad{background:rgba(232,85,78,.1);color:#f0a8a4;border:1px solid rgba(232,85,78,.3)}
+  .msg.info{background:rgba(57,197,214,.08);color:#a9e6ee;border:1px solid rgba(57,197,214,.25)}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(5,8,11,.62);opacity:0;pointer-events:none;transition:.2s;z-index:40}
+  .scrim.open{opacity:1;pointer-events:auto}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:370px;max-width:92vw;z-index:50;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,#131b23,#0e151b);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .24s}
+  .drawer.open{transform:none}
+  .drawer h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-size:16px;margin:0;padding:18px 20px 0}
+  .drawer .body{padding:14px 20px;overflow:auto;flex:1}
+  .group{border:1px solid var(--line);border-radius:9px;padding:13px;margin-bottom:14px}
+  .gh{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:11px;color:var(--ink-faint);margin:0 0 11px}
+  .toggle{display:flex;align-items:center;justify-content:space-between}
+  .switch{position:relative;width:42px;height:23px}
+  .switch input{opacity:0;width:0;height:0}
+  .slide{position:absolute;inset:0;background:#27333f;border-radius:999px;transition:.2s;cursor:pointer}
+  .slide::before{content:"";position:absolute;height:17px;width:17px;left:3px;top:3px;background:#9fb1c0;border-radius:50%;transition:.2s}
+  .switch input:checked + .slide{background:var(--green)}
+  .switch input:checked + .slide::before{transform:translateX(19px);background:#06140c}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .hint{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);line-height:1.5;margin-top:7px}
+  .drawer .foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px}
+  footer{max-width:680px;margin:0 auto;padding:0 18px calc(40px + env(safe-area-inset-bottom));text-align:center}
+
+  /* login gate */
+  .login{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+    padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));
+    background:radial-gradient(900px 500px at 50% -10%,#16222e,transparent 60%),var(--bg)}
+  .login-card{width:100%;max-width:360px;background:linear-gradient(180deg,#141d26,#0e151b);border:1px solid var(--line);
+    border-radius:16px;padding:26px 22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .login-brand{display:flex;align-items:baseline;gap:10px;justify-content:center}
+  .login-brand h1{font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-size:24px;margin:0}
+  .login-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:4px 0 20px}
+  #loginMsg .msg{margin:0 0 12px}
+  footer a{color:var(--ink-dim);font-family:var(--mono);font-size:12px;text-decoration:none;border-bottom:1px dashed var(--line)}
+  footer a:hover{color:var(--cyan)}
+
+  /* ---------- phone screens ---------- */
+  @media (max-width:560px){
+    main{padding:18px 16px calc(48px + env(safe-area-inset-bottom));
+      padding-left:calc(16px + env(safe-area-inset-left));padding-right:calc(16px + env(safe-area-inset-right))}
+    .hero{margin:8px 0 14px}
+    .hero h2{font-size:23px}
+    .searchbar{position:sticky;top:calc(58px + env(safe-area-inset-top));z-index:10;
+      margin:10px 0 14px;padding:8px 0;background:var(--bg)}
+    .searchbar input{font-size:17px;padding:14px 15px}
+    .row2{grid-template-columns:1fr}
+    .rcard{padding:14px;min-height:60px}
+    .rcard .u{font-size:18px}
+    /* stacked, full-width action buttons */
+    .editor-foot{flex-wrap:wrap;gap:10px}
+    .editor-foot>span{display:none}
+    .editor-foot .btn{width:100%;flex:1 1 100%;min-height:50px}
+    .editor-foot #eSave{order:-1}
+    /* settings as a bottom sheet */
+    .drawer{width:100%;max-width:100%;left:0;right:0;top:auto;bottom:0;height:auto;max-height:88vh;
+      border-left:0;border-top:1px solid var(--line);border-radius:18px 18px 0 0;transform:translateY(100%)}
+    .drawer.open{transform:none}
+    .drawer .foot{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+    .msg{margin-left:16px;margin-right:16px}
+  }
+  @media (max-width:380px){
+    #statusText{display:none}
+    .status-pill{padding:7px 9px}
+    .brand h1{font-size:17px}
+  }
+</style>
+</head>
+<body>
+<!-- Login gate -->
+<div class="login" id="login">
+  <div class="login-card">
+    <div class="login-brand"><h1>Depot Control</h1><span class="ver" id="loginVer">v1</span></div>
+    <p class="login-sub">Technician sign-in</p>
+    <div class="field"><label>Username</label>
+      <input id="loginUser" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username" enterkeyhint="next"></div>
+    <div class="field"><label>Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password" enterkeyhint="go"></div>
+    <div id="loginMsg"></div>
+    <button class="btn primary" id="loginBtn" style="width:100%;min-height:50px;margin-top:6px">Sign in</button>
+  </div>
+</div>
+
+<header>
+  <div class="brand"><h1>Unit Lookup</h1><span class="ver" id="appVer">v1</span></div>
+  <div class="spacer"></div>
+  <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
+  <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:0 12px;min-height:40px">Lock</button>
+  <button class="btn icon" id="cfgBtn" title="Connection settings">⚙</button>
+</header>
+
+<main>
+  <div class="hero">
+    <h2>Find a unit</h2>
+    <p>Search by set number to see where it's stabled, then edit and push the changes.</p>
+  </div>
+  <div class="searchbar">
+    <input id="q" placeholder="e.g. 700112" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="search" enterkeyhint="search">
+    <button class="btn primary" id="goBtn">Search</button>
+  </div>
+  <div id="results" class="results"></div>
+  <div id="editorWrap"></div>
+</main>
+
+<footer><a href="./depot-train-locations.html">Open the full depot diagram →</a></footer>
+
+<!-- settings -->
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer">
+  <h3>Connection</h3>
+  <div class="body">
+    <div class="toggle group">
+      <div><div style="font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-size:13px">Live data</div>
+        <div class="hint" style="margin-top:3px">Off = sample units. On = search Back4App.</div></div>
+      <label class="switch"><input type="checkbox" id="liveToggle"><span class="slide"></span></label>
+    </div>
+    <div class="group"><p class="gh">Back4App credentials</p>
+      <div class="field"><label>Server URL</label><input id="cServer" value="https://parseapi.back4app.com/"></div>
+      <div class="field"><label>Application ID</label><input id="cAppId" placeholder="your App ID"></div>
+      <div class="field"><label>JavaScript Key</label><input id="cJsKey" placeholder="your JavaScript Key"></div>
+    </div>
+    <div class="group"><p class="gh">Class &amp; fields</p>
+      <div class="field"><label>Class name</label><input id="fClass" value="TrainLocation"></div>
+      <div class="grid2">
+        <div class="field"><label>Unit field</label><input id="fUnit" value="unit"></div>
+        <div class="field"><label>Road field</label><input id="fRoad" value="road"></div>
+        <div class="field"><label>Berth field</label><input id="fBerth" value="berth"></div>
+        <div class="field"><label>Status field</label><input id="fStatus" value="status"></div>
+      </div>
+      <div class="field"><label>Detail field (optional)</label><input id="fDetail" value="destination"></div>
+    </div>
+    <div id="cfgMsg"></div>
+  </div>
+  <div class="foot">
+    <button class="btn primary" id="applyBtn" style="flex:1">Apply</button>
+    <button class="btn" id="closeBtn">Close</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   APP VERSION — bump on every change.
+   ============================================================ */
+const APP_VERSION = "3";
+
+/* ============================================================
+   LOGIN — one shared account for all technicians (no signup).
+
+   mode "parse"  -> sign in against a Back4App user you created ONCE in the
+                    dashboard. This is real security: lock the TrainLocation
+                    class to "requires authentication" so only signed-in
+                    sessions can read/write. Needs CONFIG.live + keys set below.
+
+   mode "simple" -> username/password checked in the browser. This is only a
+                    deterrent — anyone can read it from the page source. Use it
+                    for the demo, or low-stakes internal screens. NOT secure.
+
+   When live keys aren't present, the app falls back to the "simple" check so
+   the gate still works (e.g. in preview / demo).
+   ============================================================ */
+const AUTH = {
+  mode: "parse",
+  user: "technician",      // used by "simple" mode / demo fallback
+  pass: "change-this"      // CHANGE THIS if you rely on simple mode
+};
+
+/* Connection — hardcode here or use the ⚙ drawer. No browser storage used. */
+const CONFIG = {
+  live:true,
+  serverURL:"https://parseapi.back4app.com/",
+  appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM",
+  className:"TrainLocation",
+  fields:{ unit:"unit", road:"road", berth:"berth", status:"status", detail:"destination" }
+};
+
+const STATUS={stabled:{label:"Stabled",color:"var(--green)"},prepared:{label:"Prepared",color:"var(--cyan)"},
+  cleaning:{label:"Cleaning",color:"var(--violet)"},departing:{label:"Departing",color:"var(--amber)"},fault:{label:"Fault",color:"var(--red)"}};
+function normStatus(raw){const s=(raw||"").toString().toLowerCase();
+  if(/fault|hold|defect|fail/.test(s))return"fault"; if(/clean|wash|valet/.test(s))return"cleaning";
+  if(/prep|ready|service/.test(s))return"prepared"; if(/depart|out|move|book/.test(s))return"departing"; return"stabled";}
+const statusLabel=k=>STATUS[k]?STATUS[k].label:"Stabled";
+
+function sampleData(){const t=(unit,road,berth,status,detail)=>({unit,road,berth,status,detail});return[
+  t("700112","1","A","Stabled","07:14 Brighton"),t("700045","1","B","Stabled","08:02 Bedford"),t("387145","1","C","Prepared","06:48 Cambridge"),
+  t("700131","2","A","Stabled",""),t("700088","2","C","Cleaning","Interior valet"),t("700076","2","D","Stabled","09:10 Brighton"),
+  t("387112","3","B","Fault","Door fault — held"),t("700009","3","D","Stabled",""),
+  t("700154","4","A","Stabled",""),t("387101","4","B","Prepared","07:22 Cambridge"),t("700063","4","C","Stabled",""),t("700099","4","D","Stabled",""),
+  t("700120","5","A","Departing","06:31 St Pancras"),t("700055","6","B","Stabled",""),t("700144","6","C","Stabled",""),
+  t("387133","8","A","Stabled","10:05 Bedford"),t("700200","8","D","Stabled",""),t("700210","9","C","Prepared","07:40 Kings Cross"),
+  t("700301","10","A","Stabled",""),t("700302","10","B","Cleaning","Exterior wash"),t("700303","10","C","Cleaning","Interior"),t("700304","10","D","Stabled",""),
+  t("387050","11","B","Fault","Traction fault"),t("700310","11","C","Prepared","08:15 Brighton"),
+  t("700400","15","D","Stabled",""),t("700430","19","C","Fault","Brake fault — held"),
+  t("387200","Reception","","Stabled","Awaiting berth"),t("700500","Carriage Wash","","Cleaning","Auto wash"),
+];}
+
+let state={mode:"demo"};
+let parseReady=false, selected=null, demoRows=sampleData();
+const $=id=>document.getElementById(id);
+const esc=s=>(s+"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function locText(r){const road=(r.road??"").toString().trim();if(!road)return"—";
+  const num=/^\d+$/.test(road); return num?("Road "+road+(r.berth?(" · Berth "+r.berth):"")):(road+(r.berth?(" · "+r.berth):""));}
+
+function setPill(){const p=$("statusPill");p.className="status-pill "+(state.mode==="live"?"live":state.mode==="err"?"err":"demo");
+  $("statusText").textContent=state.mode==="live"?"Live · Back4App":state.mode==="err"?"Connection error":"Sample data";}
+
+/* ---------- search ---------- */
+async function doSearch(){
+  const term=$("q").value.trim();
+  $("editorWrap").innerHTML=""; selected=null;
+  if(!term){ $("results").innerHTML=`<div class="note">Type a unit number to search.</div>`; return; }
+  $("results").innerHTML=`<div class="note">Searching…</div>`;
+  let rows=[];
+  try{
+    if(CONFIG.live){
+      if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+      const f=CONFIG.fields, rx=new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i');
+      const q=new Parse.Query(CONFIG.className); q.matches(f.unit,rx); q.limit(50);
+      const res=await q.find();
+      rows=res.map(o=>({unit:o.get(f.unit),road:o.get(f.road),berth:o.get(f.berth),status:o.get(f.status),detail:f.detail?o.get(f.detail):null,__obj:o,id:o.id}));
+      state.mode="live";
+    }else{
+      rows=demoRows.filter(r=>(r.unit??"").toString().toLowerCase().includes(term.toLowerCase()));
+      state.mode="demo";
+    }
+    setPill(); renderResults(rows,term);
+  }catch(err){
+    state.mode="err"; setPill();
+    $("results").innerHTML=`<div class="msg bad" style="margin:0">Search failed: ${esc(err.message||err)}\n\nCheck your App ID, JavaScript Key and class name in ⚙, and that the class allows reads (Find/Get).</div>`;
+  }
+}
+
+function renderResults(rows,term){
+  if(!rows.length){
+    $("results").innerHTML=`<div class="note">No unit matches “${esc(term)}”.</div>`+
+      `<div style="text-align:center;margin-top:6px"><button class="btn" id="createBtn">+ Create unit ${esc(term)}</button></div>`;
+    $("createBtn").onclick=()=>openEditor({unit:term,road:"",berth:"",status:"Stabled",detail:""},true);
+    return;
+  }
+  if(rows.length===1){ $("results").innerHTML=""; openEditor(rows[0],false); return; }
+  $("results").innerHTML=rows.map((r,i)=>{
+    const st=STATUS[normStatus(r.status)];
+    return `<div class="rcard" data-i="${i}" style="--st:${st.color}">
+      <span class="st-dot"></span>
+      <span><span class="u">${esc((r.unit??"?").toString())}</span><br><span class="loc">${esc(locText(r))}</span></span>
+      <span class="stbadge">${esc(st.label)}</span></div>`;
+  }).join("");
+  [...$("results").querySelectorAll(".rcard")].forEach(el=>el.onclick=()=>{ $("results").innerHTML=""; openEditor(rows[+el.dataset.i],false); });
+}
+
+/* ---------- editor ---------- */
+function openEditor(row,isNew){
+  selected={row,isNew};
+  const st=STATUS[normStatus(row.status)];
+  $("editorWrap").innerHTML=`
+    <div class="editor">
+      <div class="editor-head">
+        <div><div class="who" id="eWho">${esc((row.unit??"").toString()||"New unit")}</div>
+          <div class="loc" id="eLoc">${esc(locText(row))}</div></div>
+        <span class="stbadge" id="eBadge" style="--st:${st.color};color:${st.color};border-color:${st.color};font-family:var(--mono);font-size:11px;border:1px solid;border-radius:999px;padding:3px 10px">${esc(st.label)}</span>
+      </div>
+      <div class="editor-body">
+        <div class="field"><label>Unit / set number</label><input id="eUnit" value="${esc((row.unit??"").toString())}"></div>
+        <div class="row2">
+          <div class="field"><label>Road / location</label><input id="eRoad" value="${esc((row.road??"").toString())}" placeholder="e.g. 5 or Carriage Wash"></div>
+          <div class="field"><label>Berth</label><input id="eBerth" value="${esc((row.berth??"").toString())}" placeholder="A / B / C / D"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Status</label><select id="eStatus">
+            <option>Stabled</option><option>Prepared</option><option>Cleaning</option><option>Departing</option><option>Fault</option></select></div>
+          <div class="field"><label>Detail / destination</label><input id="eDetail" value="${esc(((row.detail&&row.detail!=='—')?row.detail:'')+'')}"></div>
+        </div>
+      </div>
+      <div id="eMsg"></div>
+      <div class="editor-foot">
+        ${isNew?"":'<button class="btn danger" id="eRemove">Remove unit</button>'}
+        <span style="flex:1"></span>
+        <button class="btn primary" id="eSave">${isNew?"Create &amp; save":"Save changes"}</button>
+      </div>
+    </div>`;
+  $("eStatus").value=statusLabel(normStatus(row.status));
+  $("eUnit").addEventListener("input",()=>{ $("eWho").textContent=$("eUnit").value||"New unit"; });
+  const refreshLoc=()=>{ $("eLoc").textContent=locText({road:$("eRoad").value,berth:$("eBerth").value}); };
+  $("eRoad").addEventListener("input",refreshLoc); $("eBerth").addEventListener("input",refreshLoc);
+  $("eSave").onclick=()=>commit(false);
+  if(!isNew) $("eRemove").onclick=()=>commit(true);
+}
+function setEMsg(k,t){ $("eMsg").innerHTML=t?`<div class="msg ${k}">${esc(t)}</div>`:""; }
+
+async function commit(remove){
+  if(!selected) return;
+  const {row,isNew}=selected, f=CONFIG.fields;
+  const vals={ unit:$("eUnit").value.trim(), road:$("eRoad").value.trim(), berth:$("eBerth").value.trim(),
+    status:$("eStatus").value, detail:$("eDetail").value.trim() };
+  if(!remove && !vals.unit){ setEMsg("bad","Enter a unit number."); return; }
+
+  if(CONFIG.live){
+    setEMsg("info",remove?"Removing in Back4App…":"Saving to Back4App…");
+    try{
+      if(!CONFIG.appId||!CONFIG.jsKey) throw new Error("Add your App ID and JavaScript Key in ⚙ first.");
+      if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+      if(remove){
+        if(row.__obj) await row.__obj.destroy();
+        setEMsg("ok","Unit removed."); $("editorWrap").querySelector(".editor").style.opacity=".5"; selected=null;
+      }else{
+        let o=row.__obj;
+        if(!o){ o=new Parse.Object(CONFIG.className); }
+        o.set(f.unit,vals.unit); o.set(f.road,vals.road); o.set(f.berth,vals.berth); o.set(f.status,vals.status);
+        if(f.detail) o.set(f.detail, vals.detail||null);
+        await o.save();
+        row.__obj=o; Object.assign(row,vals);
+        setEMsg("ok",isNew?"Created and saved to Back4App.":"Saved to Back4App.");
+        selected.isNew=false;
+      }
+    }catch(err){
+      setEMsg("bad","Back4App rejected the write: "+(err.message||err)+
+        "\n\nThe class must allow Create/Update/Delete (Back4App → class → Class-Level Permissions). Never put the Master Key in this page.");
+    }
+  }else{
+    if(remove){ demoRows=demoRows.filter(r=>r!==row); setEMsg("info","Removed (sample only). Turn on Live data in ⚙ to write to Back4App."); }
+    else{ Object.assign(row,vals); if(isNew && !demoRows.includes(row)) demoRows.push(row);
+      setEMsg("info","Updated (sample only). Turn on Live data in ⚙ to send it to Back4App."); selected.isNew=false; }
+  }
+}
+
+/* ---------- settings drawer ---------- */
+function openCfg(){ syncForm(); $("scrim").classList.add("open"); $("drawer").classList.add("open"); }
+function closeCfg(){ $("scrim").classList.remove("open"); $("drawer").classList.remove("open"); }
+function syncForm(){ $("liveToggle").checked=CONFIG.live; $("cServer").value=CONFIG.serverURL; $("cAppId").value=CONFIG.appId;
+  $("cJsKey").value=CONFIG.jsKey; $("fClass").value=CONFIG.className; $("fUnit").value=CONFIG.fields.unit;
+  $("fRoad").value=CONFIG.fields.road; $("fBerth").value=CONFIG.fields.berth; $("fStatus").value=CONFIG.fields.status; $("fDetail").value=CONFIG.fields.detail||""; }
+function applyCfg(){
+  CONFIG.live=$("liveToggle").checked; CONFIG.serverURL=$("cServer").value.trim();
+  CONFIG.appId=$("cAppId").value.trim(); CONFIG.jsKey=$("cJsKey").value.trim();
+  CONFIG.className=$("fClass").value.trim()||"TrainLocation";
+  CONFIG.fields={unit:$("fUnit").value.trim()||"unit",road:$("fRoad").value.trim()||"road",berth:$("fBerth").value.trim()||"berth",
+    status:$("fStatus").value.trim()||"status",detail:$("fDetail").value.trim()};
+  parseReady=false; state.mode=CONFIG.live?"live":"demo"; setPill();
+  $("cfgMsg").innerHTML=`<div class="msg info">${CONFIG.live?"Live mode on. Searches will hit Back4App.":"Live off — searching sample units."}</div>`;
+}
+
+/* ---------- login ---------- */
+let authed=false;
+function isParseLogin(){ return AUTH.mode==="parse" && CONFIG.live && CONFIG.appId && CONFIG.jsKey; }
+function loginMsg(k,t){ $("loginMsg").innerHTML=t?`<div class="msg ${k}">${esc(t)}</div>`:""; }
+function showLogin(){ $("login").style.display="flex"; setTimeout(()=>$("loginUser").focus(),60); }
+function hideLogin(){ $("login").style.display="none"; }
+function unlock(){ authed=true; hideLogin(); $("signOutBtn").style.display=""; $("q").focus(); }
+
+async function doLogin(){
+  const u=$("loginUser").value.trim(), p=$("loginPass").value;
+  if(!u||!p){ loginMsg("bad","Enter username and password."); return; }
+  if(isParseLogin()){
+    loginMsg("info","Signing in…");
+    try{
+      if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+      await Parse.User.logIn(u,p);
+      loginMsg("",""); unlock();
+    }catch(err){ loginMsg("bad","Sign-in failed: "+(err.message||err)); }
+  }else{
+    if(u===AUTH.user && p===AUTH.pass){ loginMsg("",""); unlock(); }
+    else loginMsg("bad","Incorrect username or password.");
+  }
+}
+async function signOut(){
+  if(isParseLogin()){ try{ await Parse.User.logOut(); }catch(e){} }
+  authed=false; $("signOutBtn").style.display="none";
+  $("loginPass").value=""; $("editorWrap").innerHTML=""; $("results").innerHTML="";
+  showLogin();
+}
+
+/* ---------- events ---------- */
+$("goBtn").onclick=doSearch;
+$("q").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(); });
+$("cfgBtn").onclick=openCfg; $("closeBtn").onclick=closeCfg; $("scrim").onclick=closeCfg; $("applyBtn").onclick=applyCfg;
+$("loginBtn").onclick=doLogin;
+$("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("loginPass").focus(); });
+$("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
+$("signOutBtn").onclick=signOut;
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeCfg(); });
+
+(function init(){
+  $("appVer").textContent="v"+APP_VERSION;
+  $("loginVer").textContent="v"+APP_VERSION;
+  if(CONFIG.live && CONFIG.appId && CONFIG.jsKey){ state.mode="live"; }
+  setPill();
+  $("results").innerHTML=`<div class="note">Type a unit number to search.</div>`;
+
+  // gate: skip login if a Back4App session is already active, else show login
+  if(isParseLogin()){
+    try{
+      if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+      if(Parse.User.current()) unlock(); else showLogin();
+    }catch(e){ showLogin(); }
+  }else{
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

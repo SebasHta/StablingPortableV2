@@ -211,6 +211,46 @@
   }
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+  /* app shell: top bar, nav, views, home, modules */
+  .brand-btn{display:flex;align-items:center;gap:10px;background:transparent;border:0;cursor:pointer;color:var(--ink);padding:0;font:inherit}
+  .brand-btn .logo{display:flex;color:var(--cyan)}
+  .brand-txt{display:flex;align-items:baseline;gap:8px}
+  .brand-txt b{font-family:var(--cond);font-weight:700;letter-spacing:.09em;text-transform:uppercase;font-size:20px;line-height:1}
+  .mainnav{display:flex;gap:4px;margin-left:6px}
+  .mainnav button{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-weight:600;font-size:13px;color:var(--ink-dim);background:transparent;border:1px solid transparent;padding:8px 13px;border-radius:8px;cursor:pointer;transition:.15s}
+  .mainnav button:hover{color:var(--ink);background:var(--panel-2)}
+  .mainnav button.active{color:var(--ink);background:var(--panel-2);border-color:var(--line)}
+  .brand-btn:focus-visible,.mainnav button:focus-visible,.tile:focus-visible,.subhome:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+  .view{flex:1;min-height:0}
+  .stabling-view{display:flex;flex-direction:column}
+  .home-view{overflow:auto}
+  .home-inner{max-width:1120px;margin:0 auto;padding:34px 24px 60px}
+  .hero .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--cyan);text-transform:uppercase}
+  .hero h1{font-family:var(--cond);text-transform:uppercase;letter-spacing:.04em;font-size:34px;margin:6px 0 6px}
+  .hero p{color:var(--ink-dim);margin:0;max-width:600px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:26px 0 34px}
+  .kpi{background:linear-gradient(180deg,var(--panel),#10171e);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .kpi .v{font-family:var(--mono);font-weight:700;font-size:26px}
+  .kpi .k{font-size:12px;color:var(--ink-dim);margin-top:4px}
+  .kpi.warn .v{color:var(--red)}
+  .modules-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.1em;font-size:13px;color:var(--ink-faint);margin:0 0 14px}
+  .modules{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}
+  .tile{text-align:left;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,var(--panel-2),#16202a);border:1px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;transition:.15s;color:var(--ink);font:inherit;position:relative;min-height:138px}
+  .tile:hover:not(:disabled){transform:translateY(-2px);border-color:var(--cyan);box-shadow:0 10px 26px rgba(0,0,0,.45)}
+  .tile:disabled{cursor:default;opacity:.5}
+  .tile .ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:rgba(57,197,214,.12);color:var(--cyan)}
+  .tile h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:17px;margin:0}
+  .tile p{font-size:12.5px;color:var(--ink-dim);margin:0;line-height:1.45}
+  .tile .badge{position:absolute;top:14px;right:14px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-faint)}
+  .tile .badge.live{color:var(--green);border-color:var(--green)}
+  .subbar{display:flex;align-items:center;gap:12px;padding:11px 20px;border-bottom:1px solid var(--line);background:linear-gradient(var(--panel),#10171e)}
+  .subbar .sub-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:16px}
+  .subbar .sub{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+  .subbar .subhome{font-size:17px;line-height:1}
+  .apc-view{display:flex;flex-direction:column}
+  #apcFrame{flex:1;width:100%;border:0;background:var(--bg)}
+  @media (max-width:880px){ .kpis{grid-template-columns:repeat(2,1fr)} .subbar{flex-wrap:wrap} .mainnav{margin-left:0} .hero h1{font-size:27px} }
+
   /* login gate */
   .login{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:24px;
     background:radial-gradient(900px 500px at 50% -10%,#16222e,transparent 60%),var(--bg)}
@@ -238,21 +278,48 @@
 </div>
 
 
-<header>
-  <div class="brand">
-    <h1>Depot Control</h1>
-    <span class="ver" id="appVer">v1</span>
-    <span class="sub" id="depotSub">Stabling diagram</span>
-  </div>
+<header class="topbar" id="topbar" style="display:none">
+  <button class="brand-btn" id="brandHome" title="Home" aria-label="Home">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="13" rx="3"/><path d="M5 10h14"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M8 21l2-3M16 21l-2-3"/></svg></span>
+    <span class="brand-txt"><b>Depot Control</b><span class="ver" id="appVer">v1</span></span>
+  </button>
+  <nav class="mainnav" id="mainnav" aria-label="Main">
+    <button data-view="home">Home</button>
+    <button data-view="stabling">Stabling</button>
+    <button data-view="apc">APC</button>
+  </nav>
   <div class="spacer"></div>
-  <div class="search"><span style="color:var(--ink-faint);font-family:var(--mono);font-size:12px">⌕</span>
-    <input id="search" placeholder="find unit…" autocomplete="off"></div>
-  <span class="clock" id="clock">—</span>
-  <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
   <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
-  <button class="btn icon" id="refreshBtn" title="Refresh now">⟳</button>
   <button class="btn icon" id="cfgBtn" title="Connection settings">⚙</button>
 </header>
+
+<!-- HOME hub -->
+<section class="view home-view" id="homeView" style="display:none" aria-label="Home">
+  <div class="home-inner">
+    <div class="hero">
+      <div class="eyebrow">Railway fleet operations</div>
+      <h1>Monitoring &amp; Maintenance</h1>
+      <p>Depot stabling, fleet status, servicing and audits — one control surface.</p>
+    </div>
+    <div class="kpis" id="homeKpis"></div>
+    <h2 class="modules-title">Modules</h2>
+    <div class="modules" id="modules"></div>
+  </div>
+</section>
+
+<!-- STABLING module -->
+<section class="view stabling-view" id="stablingView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="subHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Stabling</span>
+    <span class="sub" id="depotSub">Stabling diagram</span>
+    <div class="spacer"></div>
+    <div class="search"><span style="color:var(--ink-faint);font-family:var(--mono);font-size:12px">⌕</span>
+      <input id="search" placeholder="find unit…" autocomplete="off"></div>
+    <span class="clock" id="clock">—</span>
+    <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
+    <button class="btn icon" id="refreshBtn" title="Refresh now">⟳</button>
+  </div>
 
 <main>
   <aside class="rail left">
@@ -285,6 +352,19 @@
     </div>
   </aside>
 </main>
+</section>
+
+<!-- APC module (framed inspection console) -->
+<section class="view apc-view" id="apcView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="apcHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">APC</span>
+    <span class="sub">Train inspection console</span>
+    <div class="spacer"></div>
+    <a class="btn icon" id="apcOpen" href="./train_inspection.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
+  </div>
+  <iframe id="apcFrame" title="APC — Train inspection console"></iframe>
+</section>
 
 <div class="scrim" id="scrim"></div>
 <div class="drawer" id="drawer">
@@ -365,7 +445,7 @@
 /* ============================================================
    APP VERSION — bump this on every change.
    ============================================================ */
-const APP_VERSION = "6";
+const APP_VERSION = "8";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -552,6 +632,46 @@ function slotEl(train,berthLabel,extraClass){
   return slot;
 }
 
+/* ---------- app shell / navigation ---------- */
+let currentView="home";
+const MODULES=[
+  {view:"stabling",live:true,name:"Stabling",desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
+  {view:"apc",live:true,name:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
+  {view:null,live:false,name:"Monitoring",desc:"Real-time train & system status.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-15 2 9h6"/></svg>'},
+  {view:null,live:false,name:"Maintenance",desc:"Work orders, schedules & servicing.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5a4 4 0 0 0-5 5l-6 6 2.5 2.5 6-6a4 4 0 0 0 5-5l-2.3 2.3-2.2-.6-.6-2.2z"/></svg>'},
+  {view:null,live:false,name:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
+  {view:null,live:false,name:"Fleet",desc:"Unit register & availability.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="12" rx="3"/><path d="M6 11h12"/><path d="M9 20l1.5-3M15 20l-1.5-3"/></svg>'},
+  {view:null,live:false,name:"Reports",desc:"Analytics & exports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
+];
+function renderModules(){
+  const el=$("modules"); if(!el) return; el.innerHTML="";
+  MODULES.forEach(m=>{
+    const b=document.createElement("button");
+    b.className="tile"; if(!m.live) b.disabled=true;
+    b.setAttribute("aria-label", m.name+(m.live?"":" — coming soon"));
+    b.innerHTML='<span class="ic">'+m.icon+'</span><h3>'+m.name+'</h3><p>'+m.desc+'</p><span class="badge'+(m.live?' live':'')+'">'+(m.live?"Live":"Soon")+'</span>';
+    if(m.live && m.view) b.onclick=()=>showView(m.view);
+    el.appendChild(b);
+  });
+}
+function renderHomeKPIs(){
+  const el=$("homeKpis"); if(!el) return;
+  const rows=state.rows||[];
+  const faults=rows.filter(r=>normStatus(r.status)==="fault").length;
+  const depart=rows.filter(r=>normStatus(r.status)==="departing").length;
+  const kpi=(v,k,warn)=>'<div class="kpi'+(warn?' warn':'')+'"><div class="v">'+v+'</div><div class="k">'+k+'</div></div>';
+  el.innerHTML=kpi(rows.length,"units tracked")+kpi(YARDS.length,"yards")+kpi(faults,"faults / holds",faults>0)+kpi(depart,"due to depart");
+}
+function showView(name){
+  document.querySelectorAll(".view").forEach(v=>v.style.display="none");
+  const el = $(name+"View") || $("homeView");
+  if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./train_inspection.html"); }
+  if(el) el.style.display="";
+  document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
+  currentView=name;
+  if(name==="home") renderHomeKPIs();
+}
+
 /* ---------- render ---------- */
 function render(){
   renderTabs();
@@ -629,6 +749,7 @@ function render(){
   pill.className="status-pill "+(state.mode==="live"?"live":state.mode==="error"?"err":"demo");
   txt.textContent=state.mode==="live"?"Live · Back4App":state.mode==="error"?"Connection error":"Sample data";
   $("depotSub").textContent=state.mode==="live"?CONFIG.className:CONFIG.depotName;
+  if($("homeKpis")) renderHomeKPIs();
 }
 
 /* ---------- right rail ---------- */
@@ -857,7 +978,8 @@ function ensureParse(){ if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.js
 function loginMsg(k,t){ $("loginMsg").innerHTML=t?'<div class="msg '+k+'">'+escapeHtml(t)+'</div>':""; }
 function showLogin(){ $("login").style.display="flex"; setTimeout(()=>$("loginUser").focus(),60); }
 function startData(){ if(CONFIG.live && CONFIG.appId && CONFIG.jsKey){ loadLive().then(restartPolling); } else { loadDemo(); } }
-function unlock(){ authed=true; $("login").style.display="none"; $("signOutBtn").style.display=""; startData(); }
+function unlock(){ authed=true; $("login").style.display="none"; $("topbar").style.display=""; $("signOutBtn").style.display="";
+  renderModules(); startData(); showView("home"); }
 
 async function doLogin(){
   const u=$("loginUser").value.trim(), p=$("loginPass").value;
@@ -874,7 +996,7 @@ async function doLogin(){
 async function signOut(){
   if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
   if(isParseLogin()){ try{ await Parse.User.logOut(); }catch(e){} }
-  authed=false; $("signOutBtn").style.display="none"; $("loginPass").value="";
+  authed=false; $("topbar").style.display="none"; $("signOutBtn").style.display="none"; $("loginPass").value="";
   showLogin();
 }
 
@@ -891,6 +1013,10 @@ $("faultList").addEventListener("click",railClick);
 $("addOther").onclick=()=>openLocationEditor(null);
 $("addFault").onclick=()=>openLocationEditor(null,"Fault");
 $("loginBtn").onclick=doLogin;
+document.querySelectorAll("#mainnav [data-view]").forEach(b=>b.onclick=()=>showView(b.dataset.view));
+$("brandHome").onclick=()=>showView("home");
+$("subHome").onclick=()=>showView("home");
+$("apcHome").onclick=()=>showView("home");
 $("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("loginPass").focus(); });
 $("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
 $("signOutBtn").onclick=signOut;

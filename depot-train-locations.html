@@ -247,8 +247,39 @@
   .subbar .sub-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:16px}
   .subbar .sub{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
   .subbar .subhome{font-size:17px;line-height:1}
+  #soundBtn.muted{color:var(--ink-faint)}
   .apc-view{display:flex;flex-direction:column}
   #apcFrame{flex:1;width:100%;border:0;background:var(--bg)}
+  /* reports module */
+  .reports-view{display:flex;flex-direction:column}
+  .reports-body{flex:1;min-height:0;overflow:auto;padding:16px 22px 44px}
+  .rep-kpis{grid-template-columns:repeat(4,1fr);max-width:820px;margin:6px 0 14px}
+  .rep-charts{display:grid;grid-template-columns:200px 1fr;gap:14px;margin:0 0 6px;max-width:820px}
+  .chart-card{background:linear-gradient(180deg,var(--panel),#10171e);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+  .chart-card{align-items:center}
+  .chart-card.grow{align-items:stretch}
+  .chart-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--ink-faint);align-self:flex-start}
+  .chart-sub{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+  @media (max-width:680px){ .rep-kpis{grid-template-columns:repeat(2,1fr)} .rep-charts{grid-template-columns:1fr} }
+  .rep-select{display:flex;align-items:center;gap:12px;margin:24px 0 14px}
+  .rep-select label{font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-size:12px;color:var(--ink-dim)}
+  .rep-select select{background:#0c131a;border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:var(--mono);font-size:14px;padding:10px 12px;min-width:230px;outline:none}
+  .rep-select select:focus{border-color:var(--rail-lit)}
+  .rep-empty{font-family:var(--mono);font-size:13px;color:var(--ink-faint);padding:22px 2px}
+  .rep-empty.bad{color:#f0a8a4}
+  .rep-unit-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .rep-unit-head h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:20px;margin:0 6px 0 0}
+  .rep-chip{font-family:var(--mono);font-size:12px;color:var(--ink-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:4px 11px}
+  .rep-chip b{color:var(--ink)}
+  .rep-chip.warn{border-color:var(--red);color:#f0a8a4}
+  .rep-chip.warn b{color:var(--red)}
+  .rep-comments{font-family:var(--mono);font-size:12px;color:var(--ink-dim);border-left:3px solid var(--line);padding:6px 12px;margin:0 0 14px}
+  .rep-tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px;max-width:820px}
+  .rep-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+  .rep-table th{position:sticky;top:0;background:var(--panel-2);color:var(--ink-dim);text-align:left;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--line)}
+  .rep-table td{padding:7px 12px;border-bottom:1px solid var(--line);color:var(--ink)}
+  .rep-table tr:last-child td{border-bottom:0}
+  .rep-table td.flag{color:var(--red);font-weight:600}
   @media (max-width:880px){ .kpis{grid-template-columns:repeat(2,1fr)} .subbar{flex-wrap:wrap} .mainnav{margin-left:0} .hero h1{font-size:27px} }
 
   /* login gate */
@@ -287,6 +318,7 @@
     <button data-view="home">Home</button>
     <button data-view="stabling">Stabling</button>
     <button data-view="apc">APC</button>
+    <button data-view="reports">Reports</button>
   </nav>
   <div class="spacer"></div>
   <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
@@ -318,6 +350,7 @@
       <input id="search" placeholder="find unit…" autocomplete="off"></div>
     <span class="clock" id="clock">—</span>
     <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
+    <button class="btn icon" id="soundBtn" title="Mute alarms" aria-label="Toggle alarm sound"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19 7a7 7 0 0 1 0 10"/></svg></button>
     <button class="btn icon" id="refreshBtn" title="Refresh now">⟳</button>
   </div>
 
@@ -364,6 +397,21 @@
     <a class="btn icon" id="apcOpen" href="./train_inspection.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
   </div>
   <iframe id="apcFrame" title="APC — Train inspection console"></iframe>
+</section>
+
+<!-- REPORTS module -->
+<section class="view reports-view" id="reportsView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="reportsHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Reports</span>
+    <span class="sub">Fleet analytics</span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="reportsRefresh" title="Refresh data">⟳</button>
+  </div>
+  <div class="reports-body">
+    <div class="tabs" id="reportSubtabs"></div>
+    <div id="reportContent"></div>
+  </div>
 </section>
 
 <div class="scrim" id="scrim"></div>
@@ -445,7 +493,7 @@
 /* ============================================================
    APP VERSION — bump this on every change.
    ============================================================ */
-const APP_VERSION = "8";
+const APP_VERSION = "12";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -641,7 +689,7 @@ const MODULES=[
   {view:null,live:false,name:"Maintenance",desc:"Work orders, schedules & servicing.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5a4 4 0 0 0-5 5l-6 6 2.5 2.5 6-6a4 4 0 0 0 5-5l-2.3 2.3-2.2-.6-.6-2.2z"/></svg>'},
   {view:null,live:false,name:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
   {view:null,live:false,name:"Fleet",desc:"Unit register & availability.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="12" rx="3"/><path d="M6 11h12"/><path d="M9 20l1.5-3M15 20l-1.5-3"/></svg>'},
-  {view:null,live:false,name:"Reports",desc:"Analytics & exports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
+  {view:"reports",live:true,name:"Reports",desc:"Fleet analytics & inspection reports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
 ];
 function renderModules(){
   const el=$("modules"); if(!el) return; el.innerHTML="";
@@ -670,6 +718,196 @@ function showView(name){
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
   if(name==="home") renderHomeKPIs();
+  if(name==="reports") openReports();
+}
+
+/* ---------- alarms / audio ---------- */
+let audioCtx=null, soundOn=true, prevUnits=null;
+const SPK_ON='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19 7a7 7 0 0 1 0 10"/></svg>';
+const SPK_OFF='<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>';
+function initAudio(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); }catch(e){} }
+function beep(freq,start,dur,type,gain){
+  if(!audioCtx) return;
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=type||"sine"; o.frequency.value=freq;
+  const t=audioCtx.currentTime+start;
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(gain||0.2,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t+dur+0.03);
+}
+function playAlarm(){ if(!soundOn) return; initAudio(); beep(880,0,0.15,"square",0.16); beep(620,0.17,0.15,"square",0.16); beep(880,0.34,0.15,"square",0.16); beep(620,0.51,0.22,"square",0.16); }
+function playInfo(){ if(!soundOn) return; initAudio(); beep(523.25,0,0.12,"sine",0.14); beep(783.99,0.12,0.17,"sine",0.14); }
+function updateSoundBtn(){ const b=$("soundBtn"); if(!b) return; b.innerHTML=soundOn?SPK_ON:SPK_OFF; b.classList.toggle("muted",!soundOn); b.title=soundOn?"Mute alarms":"Unmute alarms"; }
+function checkAlarms(){
+  const cur=new Map();
+  state.rows.forEach(r=>{ const key=((r.unit!=null&&r.unit!=="")?r.unit:(r.id||"")).toString().trim().toLowerCase(); if(!key) return; cur.set(key,normStatus(r.status)); });
+  if(prevUnits===null){ prevUnits=cur; return; }   // baseline silently on first load
+  let alarm=false, info=false;
+  cur.forEach((status,key)=>{
+    const before=prevUnits.get(key);
+    if(status==="fault" && before!=="fault") alarm=true;          // new fault / hold
+    else if(!prevUnits.has(key)) info=true;                        // unit added
+    else if(status==="stabled" && before!=="stabled") info=true;   // changed to stabled
+  });
+  prevUnits=cur;
+  if(alarm) playAlarm(); else if(info) playInfo();
+}
+
+/* ---------- reports module ---------- */
+const REPORT_SUBS=[{key:"apcfleet",name:"APC Fleet"}];
+let reportsData=null, reportsLoading=false, activeReportSub="apcfleet";
+const APC_EXPECTED=48; // 3 cars x 4 doors x 4 sensors
+const APC_FLEET_TOTAL=99; // total units in the fleet
+
+function openReports(){
+  renderReportSubtabs();
+  if(!reportsData && !reportsLoading) loadReports();
+  else showReportSub(activeReportSub);
+}
+function renderReportSubtabs(){
+  const el=$("reportSubtabs"); if(!el) return; el.innerHTML="";
+  REPORT_SUBS.forEach(sub=>{
+    const b=document.createElement("button");
+    b.className="tab"+(sub.key===activeReportSub?" active":"");
+    b.textContent=sub.name;
+    b.onclick=()=>{ activeReportSub=sub.key; renderReportSubtabs(); showReportSub(sub.key); };
+    el.appendChild(b);
+  });
+}
+function showReportSub(key){ if(key==="apcfleet") renderApcFleet(); }
+
+async function fetchInspections(){
+  if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+  const out=[]; let skip=0; const page=1000;
+  for(let i=0;i<30;i++){
+    const q=new Parse.Query("DoorSensorInspection"); q.limit(page); q.skip(skip);
+    const res=await q.find();
+    res.forEach(o=>out.push({train_id:o.get("train_id"),car:o.get("car"),door:o.get("door"),sensor:o.get("sensor"),
+      state:o.get("state"),calibration:o.get("calibration"),replacement_required:o.get("replacement_required"),
+      water_signs:o.get("water_signs"),comments:o.get("comments"),timestamp:o.get("timestamp")}));
+    if(res.length<page) break; skip+=page;
+  }
+  return out;
+}
+function apcDemoData(){
+  const cars=["Car A","Car B","Car C"],doors=["D1","D2","D3","D4"],sensors=["S1","S2","S3","S4"],units=["ADL101","ADL102","ADL103"];
+  const out=[];
+  units.forEach((u,ui)=>cars.forEach(c=>doors.forEach(d=>sensors.forEach(sn=>{
+    const rep=(ui===0&&c==="Car B"&&d==="D2"&&sn==="S3")||(ui===2&&c==="Car A"&&d==="D4"&&sn==="S1");
+    const water=(ui===1&&c==="Car A"&&d==="D1"&&sn==="S1");
+    out.push({train_id:u,car:c,door:d,sensor:sn,state:"OK",calibration:(ui===0&&c==="Car C"&&sn==="S2")?"NOK":"OK",
+      replacement_required:rep?"Yes":"No",water_signs:water?"Visible":"Not Visible",
+      comments:ui===0?"Routine 6-monthly":"",timestamp:"2026-06-2"+ui+"T08:00:00Z"});
+  }))));
+  return out.filter(r=>!(r.train_id==="ADL103"&&r.car==="Car C")); // ADL103 left incomplete
+}
+function apcStats(rows){
+  const units={};
+  rows.forEach(r=>{
+    const id=(r.train_id||"UNSET").toString();
+    if(!units[id]) units[id]={id,sensors:{},comments:"",last:""};
+    const key=(r.car||"")+"|"+(r.door||"")+"|"+(r.sensor||"");
+    const ts=(r.timestamp||"").toString();
+    const prev=units[id].sensors[key];
+    if(!prev || ts>(prev.timestamp||"")) units[id].sensors[key]=r;
+    if(r.comments && !units[id].comments) units[id].comments=r.comments;
+    if(ts>units[id].last) units[id].last=ts;
+  });
+  const list=Object.values(units).map(u=>{
+    const s=Object.values(u.sensors);
+    return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED,sensors:s,comments:u.comments,last:u.last,
+      repl:s.filter(x=>x.replacement_required==="Yes"),
+      water:s.filter(x=>x.water_signs==="Visible"),
+      calib:s.filter(x=>x.calibration==="NOK")};
+  }).sort((a,b)=>a.id.localeCompare(b.id));
+  return {units:list,completed:list.filter(u=>u.complete).length,total:list.length,
+    replacements:list.reduce((n,u)=>n+u.repl.length,0),
+    waterUnits:list.filter(u=>u.water.length>0).length,
+    calibration:list.reduce((n,u)=>n+u.calib.length,0),
+    calibUnits:list.filter(u=>u.calib.length>0).length};
+}
+async function loadReports(){
+  reportsLoading=true;
+  const c=$("reportContent"); if(c) c.innerHTML='<div class="rep-empty">Loading fleet data\u2026</div>';
+  try{
+    const rows=(CONFIG.live&&CONFIG.appId&&CONFIG.jsKey)?await fetchInspections():apcDemoData();
+    reportsData=apcStats(rows); reportsLoading=false; showReportSub(activeReportSub);
+  }catch(err){
+    reportsLoading=false;
+    if($("reportContent")) $("reportContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load DoorSensorInspection: '+escapeHtml((err&&err.message)||err)+'<br>The class must allow the signed-in user to read it.</div>';
+  }
+}
+const CH={green:"#33c977",red:"#e8554e",amber:"#e8a838",cyan:"#39c5d6",line:"#243140",ink:"#e9eef3",dim:"#8a9bab"};
+function donutSVG(value,total){
+  const pct=total?value/total:0, r=52, c=2*Math.PI*r, dash=(pct*c).toFixed(1)+" "+c.toFixed(1);
+  return '<svg viewBox="0 0 140 140" width="132" height="132" role="img" aria-label="'+value+' of '+total+' complete">'
+    +'<circle cx="70" cy="70" r="52" fill="none" stroke="'+CH.line+'" stroke-width="14"/>'
+    +'<circle cx="70" cy="70" r="52" fill="none" stroke="'+CH.green+'" stroke-width="14" stroke-linecap="round" stroke-dasharray="'+dash+'" transform="rotate(-90 70 70)"/>'
+    +'<text x="70" y="66" text-anchor="middle" fill="'+CH.ink+'" font-family="ui-monospace, Menlo, monospace" font-size="27" font-weight="700">'+value+'</text>'
+    +'<text x="70" y="88" text-anchor="middle" fill="'+CH.dim+'" font-family="ui-monospace, Menlo, monospace" font-size="11">of '+total+'</text></svg>';
+}
+function barsSVG(items){
+  const max=Math.max(1,...items.map(i=>i.value)), W=380, rowH=44, padL=182, padR=44, top=8, H=top*2+items.length*rowH;
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'" preserveAspectRatio="xMinYMin meet">';
+  items.forEach((it,i)=>{
+    const y=top+i*rowH+rowH/2, full=W-padL-padR, bw=Math.max(3,full*(it.value/max));
+    svg+='<text x="'+(padL-12)+'" y="'+(y+4)+'" text-anchor="end" fill="'+CH.dim+'" font-family="ui-monospace, Menlo, monospace" font-size="12">'+escapeHtml(it.label)+'</text>'
+      +'<rect x="'+padL+'" y="'+(y-12)+'" width="'+full+'" height="24" rx="5" fill="'+CH.line+'" opacity="0.5"/>'
+      +'<rect x="'+padL+'" y="'+(y-12)+'" width="'+bw+'" height="24" rx="5" fill="'+it.color+'"/>'
+      +'<text x="'+(padL+bw+9)+'" y="'+(y+4)+'" fill="'+CH.ink+'" font-family="ui-monospace, Menlo, monospace" font-size="13" font-weight="700">'+it.value+'</text>';
+  });
+  return svg+'</svg>';
+}
+function chartsHTML(d){
+  const bars=barsSVG([
+    {label:"Replacement (sensors)",value:d.replacements,color:CH.red},
+    {label:"Water ingress (units)",value:d.waterUnits,color:CH.cyan},
+    {label:"Calibration NOK (sensors)",value:d.calibration,color:CH.amber}
+  ]);
+  return '<div class="rep-charts">'
+    +'<div class="chart-card"><div class="chart-title">Completion</div>'+donutSVG(d.completed,APC_FLEET_TOTAL)+'<div class="chart-sub">'+d.completed+' of '+APC_FLEET_TOTAL+' fleet units · '+d.total+' inspected</div></div>'
+    +'<div class="chart-card grow"><div class="chart-title">Issues across fleet</div>'+bars+'</div>'
+    +'</div>';
+}
+function renderApcFleet(){
+  const d=reportsData; if(!d){ loadReports(); return; }
+  const kpi=(v,k,warn)=>'<div class="kpi'+(warn?' warn':'')+'"><div class="v">'+v+'</div><div class="k">'+k+'</div></div>';
+  const opts=['<option value="">Select a unit\u2026</option>'].concat(d.units.map(u=>'<option value="'+escapeHtml(u.id)+'">'+escapeHtml(u.id)+(u.complete?'':' (incomplete)')+'</option>')).join('');
+  $("reportContent").innerHTML=
+    '<div class="kpis rep-kpis">'+
+      kpi(d.completed+' / '+APC_FLEET_TOTAL,'units completed')+
+      kpi(d.replacements,'sensors need replacement',d.replacements>0)+
+      kpi(d.waterUnits,'units with water ingress',d.waterUnits>0)+
+      kpi(d.calibration,'calibration NOK',d.calibration>0)+
+    '</div>'+
+    chartsHTML(d)+
+    '<div class="rep-select"><label for="apcUnitSelect">Unit</label><select id="apcUnitSelect">'+opts+'</select></div>'+
+    '<div id="apcUnitDetail"><div class="rep-empty">Select a unit to see its inspection detail.</div></div>';
+  $("apcUnitSelect").onchange=e=>{ renderApcUnit(d.units.find(x=>x.id===e.target.value)); };
+}
+function renderApcUnit(u){
+  const el=$("apcUnitDetail"); if(!el) return;
+  if(!u){ el.innerHTML='<div class="rep-empty">Select a unit\u2026</div>'; return; }
+  const chip=(v,k,warn)=>'<span class="rep-chip'+(warn?' warn':'')+'"><b>'+v+'</b> '+k+'</span>';
+  const rows=u.sensors.slice().sort((a,b)=>((a.car||'')+(a.door||'')+(a.sensor||'')).localeCompare((b.car||'')+(b.door||'')+(b.sensor||'')));
+  const trs=rows.map(r=>'<tr>'+
+    '<td>'+escapeHtml(r.car||'')+'</td><td>'+escapeHtml(r.door||'')+'</td><td>'+escapeHtml(r.sensor||'')+'</td>'+
+    '<td>'+escapeHtml(r.state||'\u2014')+'</td>'+
+    '<td class="'+(r.calibration==="NOK"?"flag":"")+'">'+escapeHtml(r.calibration||'\u2014')+'</td>'+
+    '<td class="'+(r.replacement_required==="Yes"?"flag":"")+'">'+escapeHtml(r.replacement_required||'\u2014')+'</td>'+
+    '<td class="'+(r.water_signs==="Visible"?"flag":"")+'">'+escapeHtml(r.water_signs||'\u2014')+'</td>'+
+    '</tr>').join('');
+  el.innerHTML=
+    '<div class="rep-unit-head"><h3>'+escapeHtml(u.id)+'</h3>'+
+      chip(u.count+' / '+APC_EXPECTED,'sensors',!u.complete)+
+      chip(u.repl.length,'replacements',u.repl.length>0)+
+      chip(u.water.length,'water ingress',u.water.length>0)+
+      chip(u.calib.length,'calibration NOK',u.calib.length>0)+
+    '</div>'+
+    (u.comments?'<div class="rep-comments">\u201c'+escapeHtml(u.comments)+'\u201d</div>':'')+
+    '<div class="rep-tablewrap"><table class="rep-table"><thead><tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calib.</th><th>Replace</th><th>Water</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
 }
 
 /* ---------- render ---------- */
@@ -750,6 +988,7 @@ function render(){
   txt.textContent=state.mode==="live"?"Live · Back4App":state.mode==="error"?"Connection error":"Sample data";
   $("depotSub").textContent=state.mode==="live"?CONFIG.className:CONFIG.depotName;
   if($("homeKpis")) renderHomeKPIs();
+  checkAlarms();
 }
 
 /* ---------- right rail ---------- */
@@ -956,7 +1195,7 @@ function syncForm(){
   $("fStatus").value=CONFIG.fields.status; $("fDetail").value=CONFIG.fields.detail||"";
   $("fPoll").value=CONFIG.pollSeconds;
 }
-function applyConfig(){
+function applyConfig(){ prevUnits=null;
   CONFIG.live=$("liveToggle").checked;
   CONFIG.serverURL=$("cServer").value.trim();
   CONFIG.appId=$("cAppId").value.trim(); CONFIG.jsKey=$("cJsKey").value.trim();
@@ -996,7 +1235,7 @@ async function doLogin(){
 async function signOut(){
   if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
   if(isParseLogin()){ try{ await Parse.User.logOut(); }catch(e){} }
-  authed=false; $("topbar").style.display="none"; $("signOutBtn").style.display="none"; $("loginPass").value="";
+  authed=false; prevUnits=null; $("topbar").style.display="none"; $("signOutBtn").style.display="none"; $("loginPass").value="";
   showLogin();
 }
 
@@ -1017,6 +1256,11 @@ document.querySelectorAll("#mainnav [data-view]").forEach(b=>b.onclick=()=>showV
 $("brandHome").onclick=()=>showView("home");
 $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
+$("reportsHome").onclick=()=>showView("home");
+$("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
+$("soundBtn").onclick=()=>{ soundOn=!soundOn; updateSoundBtn(); if(soundOn){ initAudio(); playInfo(); } };
+document.addEventListener("pointerdown",initAudio);
+document.addEventListener("keydown",initAudio);
 $("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("loginPass").focus(); });
 $("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
 $("signOutBtn").onclick=signOut;
@@ -1026,6 +1270,7 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeCfg(); close
 (function init(){
   $("appVer").textContent="v"+APP_VERSION;
   $("loginVer").textContent="v"+APP_VERSION;
+  updateSoundBtn();
   tick();
   if(isParseLogin()){
     try{ ensureParse(); if(Parse.User.current()) unlock(); else showLogin(); }

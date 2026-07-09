@@ -207,6 +207,11 @@ button.ghost{background:transparent;}
   font-size:15px;letter-spacing:.03em;
 }
 .trainid-box input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.ssl-box{display:flex;flex-wrap:wrap;gap:14px;margin:14px 0 4px;}
+.ssl-field{display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px;}
+.ssl-field label{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+.ssl-field input{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
+.ssl-field input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
 .trainid-box .chip{
   font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
   border:1px solid var(--stroke);border-radius:20px;padding:5px 12px;white-space:nowrap;
@@ -340,6 +345,12 @@ button.ghost{background:transparent;}
     <span class="chip" id="trainIdChip">Not set</span>
   </div>
 
+  <div class="ssl-box">
+    <div class="ssl-field"><label for="m1SslInput">M1 SSL Sensors</label><input type="text" id="m1SslInput" autocomplete="off"></div>
+    <div class="ssl-field"><label for="tcarSslInput">TCAR SSL Sensors</label><input type="text" id="tcarSslInput" autocomplete="off"></div>
+    <div class="ssl-field"><label for="m2SslInput">M2 SSL Sensors</label><input type="text" id="m2SslInput" autocomplete="off"></div>
+  </div>
+
   <div class="summary" id="summary">
     <div class="stat"><div class="n" id="statDoors">0 / 12</div><div class="l">Doors Inspected</div></div>
     <div class="stat n-green"><div class="n" id="statSensors">0 / 48</div><div class="l">Sensors Logged</div></div>
@@ -455,10 +466,17 @@ const WATER_OPTS = ['Not Visible','Visible'];
 
 let currentCar = null, currentDoor = null;
 let trainId = '';
+let m1Ssl = '', tcarSsl = '', m2Ssl = '';
 let comments = '';
 
 const trainIdInput = document.getElementById('trainIdInput');
 const trainIdChip = document.getElementById('trainIdChip');
+const m1SslInput = document.getElementById('m1SslInput');
+const tcarSslInput = document.getElementById('tcarSslInput');
+const m2SslInput = document.getElementById('m2SslInput');
+m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); });
+tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); });
+m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); });
 trainIdInput.addEventListener('input', () => {
   trainId = trainIdInput.value.trim();
   trainIdChip.textContent = trainId ? trainId : 'Not set';
@@ -469,6 +487,8 @@ const commentsCount = document.getElementById('commentsCount');
 commentsInput.addEventListener('input', () => {
   comments = commentsInput.value;
   commentsCount.textContent = `${comments.length} / 2000`;
+  m1Ssl = payload.m1_ssl_sensors || ''; tcarSsl = payload.tcar_ssl_sensors || ''; m2Ssl = payload.m2_ssl_sensors || '';
+  m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
 });
 
 /* ---------------- build SVG diagram ---------------- */
@@ -691,6 +711,9 @@ function toRows(){
   return Object.values(records).map(r => ({
     train_id: trainId || 'UNSET',
     comments: comments || '',
+    m1_ssl_sensors: m1Ssl || '',
+    tcar_ssl_sensors: tcarSsl || '',
+    m2_ssl_sensors: m2Ssl || '',
     car: r.car, door: r.door, sensor: r.sensor,
     state: r.state, calibration: r.calibration,
     replacement_required: r.replacement, water_signs: r.water,
@@ -823,6 +846,9 @@ document.getElementById('btnSaveTrain').addEventListener('click', async () => {
     sensors_recorded: rows.length,
     sensors_expected: CARS.length * DOORS.length * SENSORS.length,
     comments: comments,
+    m1_ssl_sensors: m1Ssl,
+    tcar_ssl_sensors: tcarSsl,
+    m2_ssl_sensors: m2Ssl,
     records: rows
   };
   const filename = `${fileBase()}.json`;
@@ -881,6 +907,8 @@ function applyTrainPayload(payload, sourceLabel){
   comments = payload.comments || '';
   commentsInput.value = comments;
   commentsCount.textContent = `${comments.length} / 2000`;
+  m1Ssl = payload.m1_ssl_sensors || ''; tcarSsl = payload.tcar_ssl_sensors || ''; m2Ssl = payload.m2_ssl_sensors || '';
+  m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
 
   CARS.forEach(car => DOORS.forEach(doorId => updateDoorStatus(car.id, doorId)));
   renderLog();

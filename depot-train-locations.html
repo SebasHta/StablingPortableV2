@@ -68,6 +68,12 @@
   .legend .row{display:flex;align-items:center;gap:9px;padding:6px 0;font-family:var(--mono);font-size:11.5px;color:var(--ink-dim)}
   .chip{width:11px;height:11px;border-radius:3px;flex:none}
   /* yard */
+  .tabs{display:flex;gap:6px;margin:0 0 16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .tab{font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-weight:600;font-size:13.5px;
+    color:var(--ink-dim);background:transparent;border:1px solid transparent;border-bottom:2px solid transparent;
+    padding:9px 18px;border-radius:8px 8px 0 0;cursor:pointer;transition:.15s;margin-bottom:-1px}
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--ink);background:linear-gradient(var(--panel),#10171e);border-color:var(--line);border-bottom-color:var(--cyan)}
   .yard{grid-area:yard;padding:14px 22px 40px;overflow:auto}
   .section{margin-bottom:26px}
   .section-head{display:flex;align-items:center;gap:12px;margin:0 0 12px}
@@ -89,6 +95,9 @@
   .throat{position:absolute;left:7px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;
     background:var(--rail-lit);box-shadow:0 0 8px var(--rail-lit);z-index:3}
   .buffer{margin-left:auto;flex:none;display:flex;align-items:center;gap:3px;z-index:3;padding-left:4px}
+  /* right-aligned sections: berths packed against the buffer stop */
+  .track.track-right{justify-content:flex-end}
+  .track.track-right .buffer{margin-left:0}
   .buffer i{display:block;width:4px;height:30px;background:var(--rail-lit);border-radius:1px;box-shadow:0 0 6px rgba(90,113,134,.4)}
   .buffer span{font-family:var(--mono);font-size:8px;color:var(--ink-faint);writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-1px}
 
@@ -262,7 +271,7 @@
     </div>
   </aside>
 
-  <section class="yard"><div id="yard"></div></section>
+  <section class="yard"><div class="tabs" id="tabs"></div><div id="yard"></div></section>
 
   <aside class="rail right" id="rightRail">
     <p class="panel-title">Other locations / faults</p>
@@ -356,7 +365,7 @@
 /* ============================================================
    APP VERSION — bump this on every change.
    ============================================================ */
-const APP_VERSION = "2";
+const APP_VERSION = "6";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -377,14 +386,15 @@ const AUTH = {
       kind:"depot"  -> first & last berth OUTSIDE, middle berths UNDER COVER
       single:true   -> one berth; any unit on that road is placed here
    ============================================================ */
-const LAYOUT = [
+const YARDS = [
+  { key:"Main Depot", name:"Main Depot", sections:[
   { section:"Stabling Roads", note:"roads 1–9 · berths A B C D", kind:"plain",
     roads:[1,2,3,4,5,6,7,8,9].map(n=>({label:String(n), berths:["A","B","C","D"]})) },
 
   { section:"Depot", note:"4 roads · A/D outside · B/C under cover", kind:"depot",
     roads:["10","11","12","13"].map(n=>({label:n, berths:["A","B","C","D"]})) },
 
-  { section:"West Yard", note:"roads 15–22", kind:"plain",
+  { section:"West Yard", note:"roads 15–24", kind:"plain", align:"right",
     roads:[
       {label:"15", berths:["D"], single:true},
       {label:"16", berths:["B","C","D"]},
@@ -394,8 +404,20 @@ const LAYOUT = [
       {label:"20", berths:["B","C","D"]},
       {label:"21", berths:["B","C","D"]},
       {label:"22", berths:["B","C","D"]},
+      {label:"23", berths:["A","B","C","D"]},
+      {label:"24", berths:["A","B","C","D"]},
     ] },
+  ] },
+  { key:"Henderson", name:"Henderson", sections:[
+    { section:"Henderson", note:"9 roads · 2 berths", kind:"plain",
+      roads:[1,2,3,4,5,6,7,8,9].map(n=>({label:String(n), berths:["A","B"]})) },
+  ] },
+  { key:"Pukekohe", name:"Pukekohe", sections:[
+    { section:"Pukekohe", note:"8 roads · 2 berths", kind:"plain",
+      roads:[1,2,3,4,5,6,7,8].map(n=>({label:String(n), berths:["A","B"]})) },
+  ] },
 ];
+let activeYard = 0;
 
 /* ============================================================
    2) CONNECTION — hardcode here, or use the ⚙ drawer. No browser storage used.
@@ -405,7 +427,7 @@ const CONFIG = {
   serverURL:"https://parseapi.back4app.com/",
   appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM",
   className:"TrainLocation",
-  fields:{ unit:"unit", road:"road", berth:"berth", status:"status", detail:"destination" },
+  fields:{ unit:"unit", road:"road", berth:"berth", status:"status", detail:"destination", yard:"yard" },
   pollSeconds:15,
   depotName:"Stabling diagram"
 };
@@ -457,6 +479,13 @@ function sampleData(){
     t("700500","Carriage Wash","","Cleaning","Auto wash"),
     t("700510","Fuel Point","","Fault","Refuel — AdBlue fault"),
     t("387210","Main Line","","Departing","06:18 to service"),
+    {yard:"Henderson",unit:"AMP101",road:"1",berth:"A",status:"Stabled",detail:""},
+    {yard:"Henderson",unit:"AMP102",road:"1",berth:"B",status:"Prepared",detail:"06:20 Britomart"},
+    {yard:"Henderson",unit:"AMP103",road:"4",berth:"A",status:"Cleaning",detail:"Interior valet"},
+    {yard:"Henderson",unit:"AMP104",road:"7",berth:"B",status:"Fault",detail:"Door fault — held"},
+    {yard:"Pukekohe",unit:"AMP201",road:"2",berth:"A",status:"Stabled",detail:""},
+    {yard:"Pukekohe",unit:"AMP202",road:"3",berth:"B",status:"Departing",detail:"06:35 Papakura"},
+    {yard:"Pukekohe",unit:"AMP203",road:"6",berth:"A",status:"Stabled",detail:""},
   ];
 }
 
@@ -468,6 +497,16 @@ const yardEl=$("yard");
 const escapeHtml=s=>(s+"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* ---------- indexing ---------- */
+function yardKey(r){ return (r.yard??"").toString().trim().toLowerCase(); }
+function yardOf(r){ const k=yardKey(r); if(!k) return YARDS[0]; return YARDS.find(y=>y.key.toLowerCase()===k)||null; }
+function yardRoadSet(y){ return new Set(y.sections.flatMap(s=>s.roads.map(r=>r.label.toString().trim().toLowerCase()))); }
+function placeable(r){ const y=yardOf(r); if(!y) return false; return yardRoadSet(y).has((r.road??"").toString().trim().toLowerCase()); }
+function roadInfoIn(y,roadLabel){ const key=(roadLabel??"").toString().trim().toLowerCase();
+  for(const sec of y.sections){ for(const r of sec.roads){ if(r.label.toString().trim().toLowerCase()===key) return {found:true,single:!!r.single,firstBerth:r.berths[0]}; } }
+  return {found:false}; }
+function renderTabs(){ const el=$("tabs"); if(!el) return; el.innerHTML="";
+  YARDS.forEach((y,i)=>{ const b=document.createElement("button"); b.className="tab"+(i===activeYard?" active":"");
+    b.textContent=y.name; b.onclick=()=>{ if(i!==activeYard){ activeYard=i; render(); } }; el.appendChild(b); }); }
 function buildIndex(rows){
   const idx={};
   rows.forEach(r=>{
@@ -515,11 +554,13 @@ function slotEl(train,berthLabel,extraClass){
 
 /* ---------- render ---------- */
 function render(){
+  renderTabs();
   yardEl.innerHTML="";
-  const idx=buildIndex(state.rows);
+  const activeY=YARDS[activeYard]; state.rows.forEach(r=>r.__placed=false);
+  const idx=buildIndex(state.rows.filter(r=>yardOf(r)===activeY));
   let totalBerths=0, occupied=0;
 
-  LAYOUT.forEach(sec=>{
+  activeY.sections.forEach(sec=>{
     const wrap=document.createElement("div"); wrap.className="section";
     wrap.innerHTML=`<div class="section-head"><h2>${escapeHtml(sec.section)}</h2><span class="meta">${escapeHtml(sec.note||"")}</span><span class="rule"></span></div>`;
 
@@ -528,7 +569,7 @@ function render(){
       const lbl=document.createElement("div"); lbl.className="road-label";
       lbl.innerHTML=road.label+`<small>${road.single?"1 berth":road.berths.length+" berths"}</small>`;
 
-      const track=document.createElement("div"); track.className="track";
+      const track=document.createElement("div"); track.className="track"+(sec.align==="right"?" track-right":"");
       track.innerHTML='<span class="throat" title="Entry throat"></span>';
 
       const makeSlot=(b,cls)=>{
@@ -562,10 +603,10 @@ function render(){
   });
 
   // classify leftover units
-  const roadSet=new Set(LAYOUT.flatMap(s=>s.roads.map(r=>r.label.toString().trim().toLowerCase())));
+  const activeRoadSet=new Set(activeY.sections.flatMap(s=>s.roads.map(r=>r.label.toString().trim().toLowerCase())));
   const roadKey=r=>(r.road??"").toString().trim().toLowerCase();
-  const others=state.rows.filter(r=>!roadSet.has(roadKey(r)));
-  const unplacedKnown=state.rows.filter(r=>!r.__placed && roadSet.has(roadKey(r)));
+  const others=state.rows.filter(r=>!placeable(r));
+  const unplacedKnown=state.rows.filter(r=>yardOf(r)===activeY && !r.__placed && activeRoadSet.has(roadKey(r)));
   const faults=state.rows.filter(r=>normStatus(r.status)==="fault");
 
   if(unplacedKnown.length){
@@ -578,8 +619,8 @@ function render(){
   renderRightRail(others,faults);
 
   // stats
-  const norm=state.rows.map(r=>normStatus(r.status));
-  $("sTrains").textContent=state.rows.length;
+  const norm=state.rows.filter(r=>yardOf(r)===activeY).map(r=>normStatus(r.status));
+  $("sTrains").textContent=state.rows.filter(r=>yardOf(r)===activeY).length;
   $("sBerths").textContent=occupied+" / "+totalBerths;
   $("sFaults").textContent=norm.filter(s=>s==="fault").length;
   $("sDepart").textContent=norm.filter(s=>s==="departing").length;
@@ -636,7 +677,7 @@ const statusLabel=k=>STATUS[k]?STATUS[k].label:"Stabled";
 
 function roadInfo(roadLabel){
   const key=(roadLabel??"").toString().trim().toLowerCase();
-  for(const s of LAYOUT){
+  for(const s of YARDS[activeYard].sections){
     for(const r of s.roads){
       if(r.label.toString().trim().toLowerCase()===key)
         return {found:true, single:!!r.single, firstBerth:r.berths[0]};
@@ -646,8 +687,8 @@ function roadInfo(roadLabel){
 }
 // route a unit from the rails to the right editor
 function openRowEditor(row){
-  const info=roadInfo(row.road);
-  if(info.found) openBerthEditor(row.road, row.berth||info.firstBerth, info.single, row);
+  const y=yardOf(row); const info=y?roadInfoIn(y,row.road):{found:false};
+  if(info.found){ activeYard=YARDS.indexOf(y); render(); openBerthEditor(row.road, row.berth||info.firstBerth, info.single, row); }
   else openLocationEditor(row);
 }
 
@@ -689,9 +730,9 @@ function fillEditor(row){
 function closeEdit(){ $("editScrim").classList.remove("open"); $("editModal").classList.remove("open"); editCtx=null; }
 function setEditMsg(k,t){ $("editMsg").innerHTML='<div class="msg '+k+'">'+escapeHtml(t)+'</div>'; }
 
-function findRowAt(road,berth,single){
+function findRowAt(road,berth,single,yard){
   const rk=s=>(s??"").toString().trim().toLowerCase();
-  return state.rows.find(r=> rk(r.road)===rk(road) &&
+  return state.rows.find(r=> (!yard||yardOf(r)===yard) && rk(r.road)===rk(road) &&
     (single || (r.berth??"").toString().trim().toUpperCase()===berth.toString().toUpperCase()));
 }
 
@@ -712,9 +753,10 @@ async function commit(clear){
     if(!road && existing) road=existing.road;
   }else{
     road=editCtx.road; berth=editCtx.berth;
-    existing=findRowAt(road,berth,editCtx.single);
+    existing=findRowAt(road,berth,editCtx.single,YARDS[activeYard]);
   }
   const doClear = clear || !unit;
+  const yardVal = editCtx.mode==="location" ? (existing?existing.yard:"") : YARDS[activeYard].key;
 
   if(CONFIG.live){
     setEditMsg("info", doClear?"Removing in Back4App…":"Saving to Back4App…");
@@ -728,17 +770,17 @@ async function commit(clear){
         if(existing) state.rows=state.rows.filter(r=>r!==existing);
       }else if(existing && existing.__obj){
         existing.__obj.set(f.unit,unit); existing.__obj.set(f.status,status);
-        existing.__obj.set(f.road,road); existing.__obj.set(f.berth,berth);
+        existing.__obj.set(f.road,road); existing.__obj.set(f.berth,berth); if(f.yard) existing.__obj.set(f.yard,yardVal);
         if(f.detail) existing.__obj.set(f.detail, detail||null);
         await existing.__obj.save();
-        Object.assign(existing,{unit,status,detail,road,berth});
+        Object.assign(existing,{unit,status,detail,road,berth,yard:yardVal});
       }else{
         const o=new Parse.Object(CONFIG.className);
-        o.set(f.unit,unit); o.set(f.road,road); o.set(f.berth,berth); o.set(f.status,status);
+        o.set(f.unit,unit); o.set(f.road,road); o.set(f.berth,berth); o.set(f.status,status); if(f.yard) o.set(f.yard,yardVal);
         if(f.detail) o.set(f.detail, detail||null);
         await o.save();
-        if(existing) Object.assign(existing,{unit,status,detail,road,berth,__obj:o,id:o.id});
-        else state.rows.push({unit,road,berth,status,detail,__obj:o,id:o.id});
+        if(existing) Object.assign(existing,{unit,status,detail,road,berth,yard:yardVal,__obj:o,id:o.id});
+        else state.rows.push({unit,road,berth,status,detail,yard:yardVal,__obj:o,id:o.id});
       }
       state.lastUpdated=new Date(); render();
       setEditMsg("ok", doClear?"Removed and saved.":"Saved to Back4App.");
@@ -749,8 +791,8 @@ async function commit(clear){
     }
   }else{
     if(doClear){ if(existing) state.rows=state.rows.filter(r=>r!==existing); }
-    else if(existing){ Object.assign(existing,{unit,status,detail,road,berth}); }
-    else state.rows.push({unit,road,berth,status,detail});
+    else if(existing){ Object.assign(existing,{unit,status,detail,road,berth,yard:yardVal}); }
+    else state.rows.push({unit,road,berth,status,detail,yard:yardVal});
     state.lastUpdated=new Date(); render();
     setEditMsg("info","Updated in this view. Turn on Live data (⚙) to send it to Back4App.");
     setTimeout(closeEdit,800);
@@ -766,7 +808,7 @@ async function loadLive(){
     const f=CONFIG.fields;
     const q=new Parse.Query(CONFIG.className); q.limit(1000);
     const res=await q.find();
-    state.rows=res.map(o=>({ unit:o.get(f.unit), road:o.get(f.road), berth:o.get(f.berth), status:o.get(f.status), detail:f.detail?o.get(f.detail):null, __obj:o, id:o.id }));
+    state.rows=res.map(o=>({ unit:o.get(f.unit), road:o.get(f.road), berth:o.get(f.berth), status:o.get(f.status), detail:f.detail?o.get(f.detail):null, yard:f.yard?o.get(f.yard):null, __obj:o, id:o.id }));
     state.mode="live"; state.error=""; state.lastUpdated=new Date(); render();
     setMsg("ok","Connected. Loaded "+state.rows.length+" unit"+(state.rows.length===1?"":"s")+" from “"+CONFIG.className+"”.");
   }catch(err){

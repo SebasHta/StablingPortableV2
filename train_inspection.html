@@ -456,7 +456,7 @@ const CARS = [
   {id:'M2', label:'M2 CAR', sub:'MOTOR CAR · 4 DOORS · 16 SENSORS', x:830}
 ];
 const CAR_W = 360, CAR_H = 150, CAR_Y = 135;
-const DOORS = ['D1','D2','D3','D4']; // D1 top-left, D2 top-right, D3 bottom-left, D4 bottom-right
+const DOORS = ['D1','D2','D3','D4']; // physical placement per car set in DOOR_LAYOUT
 const SENSORS = ['S1','S2','S3','S4'];
 
 const STATE_OPTS = ['Not Tested','Operational','Fault Detected','Offline'];
@@ -487,19 +487,26 @@ const commentsCount = document.getElementById('commentsCount');
 commentsInput.addEventListener('input', () => {
   comments = commentsInput.value;
   commentsCount.textContent = `${comments.length} / 2000`;
-  m1Ssl = payload.m1_ssl_sensors || ''; tcarSsl = payload.tcar_ssl_sensors || ''; m2Ssl = payload.m2_ssl_sensors || '';
-  m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
 });
 
 /* ---------------- build SVG diagram ---------------- */
 const svgNS = 'http://www.w3.org/2000/svg';
 const trainGroup = document.getElementById('trainGroup');
 
-function doorGeometry(carX, doorId){
+// Per-car door placement. side 'R' = right-hand side (top edge), 'L' = left-hand side (bottom edge);
+// pos 0 = first along the car, pos 1 = second.
+// M1 & T CAR: D1 R/1st, D2 L/1st, D3 R/2nd, D4 L/2nd.  M2 CAR is mirrored (opposite sides).
+const DOOR_LAYOUT = {
+  M1: { D1:{side:'R',pos:0}, D2:{side:'L',pos:0}, D3:{side:'R',pos:1}, D4:{side:'L',pos:1} },
+  T:  { D1:{side:'R',pos:0}, D2:{side:'L',pos:0}, D3:{side:'R',pos:1}, D4:{side:'L',pos:1} },
+  M2: { D1:{side:'L',pos:1}, D2:{side:'R',pos:1}, D3:{side:'L',pos:0}, D4:{side:'R',pos:0} }
+};
+function doorGeometry(carX, doorId, carId){
   const w = 70, h = 14;
-  const xOffsets = {D1: 40, D2: 250, D3: 40, D4: 250};
-  const x = carX + xOffsets[doorId];
-  const y = (doorId === 'D1' || doorId === 'D2') ? CAR_Y - h : CAR_Y + CAR_H;
+  const posX = [40, 250];
+  const L = (DOOR_LAYOUT[carId] && DOOR_LAYOUT[carId][doorId]) || {side:'R', pos:0};
+  const x = carX + posX[L.pos];
+  const y = L.side === 'R' ? CAR_Y - h : CAR_Y + CAR_H;
   return {x, y, w, h};
 }
 
@@ -532,7 +539,7 @@ CARS.forEach((car, ci) => {
   g.appendChild(sub);
 
   DOORS.forEach(doorId => {
-    const {x,y,w,h} = doorGeometry(car.x, doorId);
+    const {x,y,w,h} = doorGeometry(car.x, doorId, car.id);
     const rect = document.createElementNS(svgNS, 'rect');
     rect.setAttribute('x', x);
     rect.setAttribute('y', y);
@@ -546,7 +553,7 @@ CARS.forEach((car, ci) => {
 
     const dl = document.createElementNS(svgNS, 'text');
     dl.setAttribute('x', x + w/2);
-    dl.setAttribute('y', (doorId === 'D1' || doorId === 'D2') ? y - 5 : y + h + 13);
+    dl.setAttribute('y', (y < CAR_Y) ? y - 5 : y + h + 13);
     dl.setAttribute('class', 'door-label');
     dl.textContent = doorId;
     g.appendChild(dl);

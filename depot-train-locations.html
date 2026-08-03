@@ -82,7 +82,7 @@
   .fr-eyebrow{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#666}
   .fr-head h1{font-family:'Barlow Condensed','Inter',sans-serif;text-transform:uppercase;letter-spacing:.04em;font-size:30px;margin:2px 0 0;color:#111}
   .fr-meta{font-family:ui-monospace,monospace;font-size:11px;color:#555;text-align:right;line-height:1.6}
-  .fr-kpis{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #ccc;margin-bottom:22px}
+  .fr-kpis{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #ccc;margin-bottom:22px}
   .fr-kpi{padding:12px 16px;border-right:1px solid #ccc}
   .fr-kpi:last-child{border-right:0}
   .fr-kpi .v{font-family:ui-monospace,monospace;font-size:24px;font-weight:700;color:#111}
@@ -94,6 +94,8 @@
   .fr-table{width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:11px;color:#111}
   .fr-table th{background:#f0f0f0;text-align:left;padding:7px 9px;border:1px solid #bbb;text-transform:uppercase;font-size:9.5px;letter-spacing:.04em;color:#444}
   .fr-table td{padding:6px 9px;border:1px solid #ccc}
+  .fr-table td.fr-fail{color:#c0392b;font-weight:700}
+  .fr-table td.fr-pass{color:#1e7d34;font-weight:700}
   .fr-table tr{page-break-inside:avoid}
   .fr-foot{margin-top:18px;font-family:ui-monospace,monospace;font-size:9.5px;color:#999;text-align:center}
   @media print{
@@ -292,6 +294,11 @@
   .chart-card.grow{align-items:stretch}
   .chart-title{font-family:var(--cond);text-transform:uppercase;letter-spacing:.08em;font-size:13px;color:var(--ink-faint);align-self:flex-start}
   .chart-sub{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
+  .rep-charts-pie{max-width:1040px;margin:0 auto 12px}
+  .pie-row{display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+  .pie-legend{display:flex;flex-direction:column;gap:9px;font-family:var(--mono);font-size:13px}
+  .pie-li{display:flex;align-items:center;gap:9px}
+  .pie-li .sw{width:13px;height:13px;border-radius:3px;display:inline-block}
   @media (max-width:680px){ .rep-kpis{grid-template-columns:repeat(2,1fr)} .rep-charts{grid-template-columns:1fr} }
   .rep-select{display:flex;align-items:center;gap:12px;margin:24px 0 14px}
   .rep-select label{font-family:var(--cond);text-transform:uppercase;letter-spacing:.07em;font-size:13px;color:var(--ink-dim)}
@@ -301,6 +308,9 @@
   .rep-empty.bad{color:#f0a8a4}
   .rep-unit-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
   .rep-unit-head h3{font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:25px;margin:0 8px 0 0}
+  .rep-pass{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;border-radius:999px;padding:5px 13px;border:1px solid}
+  .rep-pass.ok{color:var(--green);border-color:var(--green)}
+  .rep-pass.no{color:var(--red);border-color:var(--red)}
   .rep-chip{font-family:var(--mono);font-size:13px;color:var(--ink-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:6px 14px}
   .rep-chip b{color:var(--ink)}
   .rep-chip.warn{border-color:var(--red);color:#f0a8a4}
@@ -525,7 +535,7 @@
 /* ============================================================
    APP VERSION — bump this on every change.
    ============================================================ */
-const APP_VERSION = "14";
+const APP_VERSION = "16";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -818,7 +828,7 @@ async function fetchInspections(){
     const res=await q.find();
     res.forEach(o=>out.push({train_id:o.get("train_id"),car:o.get("car"),door:o.get("door"),sensor:o.get("sensor"),
       state:o.get("state"),calibration:o.get("calibration"),replacement_required:o.get("replacement_required"),
-      water_signs:o.get("water_signs"),comments:o.get("comments"),timestamp:o.get("timestamp")}));
+      water_signs:o.get("water_signs"),m1_ssl_sensors:o.get("m1_ssl_sensors"),tcar_ssl_sensors:o.get("tcar_ssl_sensors"),m2_ssl_sensors:o.get("m2_ssl_sensors"),comments:o.get("comments"),timestamp:o.get("timestamp")}));
     if(res.length<page) break; skip+=page;
   }
   return out;
@@ -829,22 +839,26 @@ function apcDemoData(){
   units.forEach((u,ui)=>cars.forEach(c=>doors.forEach(d=>sensors.forEach(sn=>{
     const rep=(ui===0&&c==="Car B"&&d==="D2"&&sn==="S3")||(ui===2&&c==="Car A"&&d==="D4"&&sn==="S1");
     const water=(ui===1&&c==="Car A"&&d==="D1"&&sn==="S1");
-    out.push({train_id:u,car:c,door:d,sensor:sn,state:"OK",calibration:(ui===0&&c==="Car C"&&sn==="S2")?"NOK":"OK",
+    out.push({train_id:u,car:c,door:d,sensor:sn,state:"OK",calibration:(ui===0&&c==="Car C"&&sn==="S2")?"NOK":((ui===1&&c==="Car B")?"Adjusted":"OK"),
       replacement_required:rep?"Yes":"No",water_signs:water?"Visible":"Not Visible",
-      comments:ui===0?"Routine 6-monthly":"",timestamp:"2026-06-2"+ui+"T08:00:00Z"});
+      comments:ui===0?"Routine 6-monthly":"",m1_ssl_sensors:"16",tcar_ssl_sensors:(ui===1?"14":"16"),m2_ssl_sensors:"16",timestamp:"2026-06-2"+ui+"T08:00:00Z"});
   }))));
   return out.filter(r=>!(r.train_id==="ADL103"&&r.car==="Car C")); // ADL103 left incomplete
 }
+function sslOk(v){ const n=parseInt(v,10); return !isNaN(n) && n>=16; }
 function apcStats(rows){
   const units={};
   rows.forEach(r=>{
     const id=(r.train_id||"UNSET").toString();
-    if(!units[id]) units[id]={id,sensors:{},comments:"",last:""};
+    if(!units[id]) units[id]={id,sensors:{},comments:"",last:"",m1Ssl:"",tcarSsl:"",m2Ssl:""};
     const key=(r.car||"")+"|"+(r.door||"")+"|"+(r.sensor||"");
     const ts=(r.timestamp||"").toString();
     const prev=units[id].sensors[key];
     if(!prev || ts>(prev.timestamp||"")) units[id].sensors[key]=r;
     if(r.comments && !units[id].comments) units[id].comments=r.comments;
+    if(r.m1_ssl_sensors && !units[id].m1Ssl) units[id].m1Ssl=r.m1_ssl_sensors;
+    if(r.tcar_ssl_sensors && !units[id].tcarSsl) units[id].tcarSsl=r.tcar_ssl_sensors;
+    if(r.m2_ssl_sensors && !units[id].m2Ssl) units[id].m2Ssl=r.m2_ssl_sensors;
     if(ts>units[id].last) units[id].last=ts;
   });
   const list=Object.values(units).map(u=>{
@@ -852,13 +866,20 @@ function apcStats(rows){
     return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED,sensors:s,comments:u.comments,last:u.last,
       repl:s.filter(x=>x.replacement_required==="Yes"),
       water:s.filter(x=>x.water_signs==="Visible"),
-      calib:s.filter(x=>x.calibration==="NOK")};
+      calib:s.filter(x=>x.calibration==="NOK"),
+      adjusted:s.filter(x=>x.calibration==="Adjusted"),
+      calOk:s.filter(x=>x.calibration==="OK"),
+      m1Ssl:u.m1Ssl,tcarSsl:u.tcarSsl,m2Ssl:u.m2Ssl,
+      pass:sslOk(u.m1Ssl)&&sslOk(u.tcarSsl)&&sslOk(u.m2Ssl)};
   }).sort((a,b)=>a.id.localeCompare(b.id));
   return {units:list,completed:list.filter(u=>u.complete).length,total:list.length,
     replacements:list.reduce((n,u)=>n+u.repl.length,0),
     waterUnits:list.filter(u=>u.water.length>0).length,
     calibration:list.reduce((n,u)=>n+u.calib.length,0),
-    calibUnits:list.filter(u=>u.calib.length>0).length};
+    calibUnits:list.filter(u=>u.calib.length>0).length,
+    passed:list.filter(u=>u.pass).length,
+    adjusted:list.reduce((n,u)=>n+u.adjusted.length,0),
+    calOk:list.reduce((n,u)=>n+u.calOk.length,0)};
 }
 async function loadReports(){
   reportsLoading=true;
@@ -892,6 +913,38 @@ function barsSVG(items,opt){ opt=opt||{}; const dim=opt.dim||CH.dim, ink=opt.ink
   });
   return svg+'</svg>';
 }
+function pieSVG(segments, opt){
+  opt=opt||{};
+  const total=segments.reduce((n,x)=>n+(x.value||0),0), cx=90, cy=90, r=80;
+  let out='';
+  if(total<=0){ out='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+(opt.ring||CH.line)+'" stroke-width="2"/>'; }
+  else {
+    let ang=-Math.PI/2;
+    segments.forEach(seg=>{
+      const v=seg.value||0; if(v<=0) return;
+      const frac=v/total;
+      if(frac>=0.9999){ out+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+seg.color+'"/>'; return; }
+      const a2=ang+frac*2*Math.PI;
+      const x1=(cx+r*Math.cos(ang)).toFixed(2), y1=(cy+r*Math.sin(ang)).toFixed(2);
+      const x2=(cx+r*Math.cos(a2)).toFixed(2), y2=(cy+r*Math.sin(a2)).toFixed(2);
+      const large=frac>0.5?1:0;
+      out+='<path d="M'+cx+','+cy+' L'+x1+','+y1+' A'+r+','+r+' 0 '+large+' 1 '+x2+','+y2+' Z" fill="'+seg.color+'"/>';
+      ang=a2;
+    });
+  }
+  return '<svg viewBox="0 0 180 180" width="152" height="152" role="img" aria-label="calibration breakdown">'+out+'</svg>';
+}
+function calibSegments(d){ return [
+  {label:"OK",value:d.calOk,color:CH.green},
+  {label:"Adjusted",value:d.adjusted,color:CH.cyan},
+  {label:"NOK",value:d.calibration,color:CH.red}
+]; }
+function pieCard(d,opt){
+  opt=opt||{}; const ink=opt.ink||CH.ink, dim=opt.dim||CH.dim;
+  const segs=calibSegments(d);
+  const legend='<div class="pie-legend">'+segs.map(sg=>'<div class="pie-li"><span class="sw" style="background:'+sg.color+'"></span><span style="color:'+dim+'">'+sg.label+'</span> <b style="color:'+ink+'">'+sg.value+'</b></div>').join('')+'</div>';
+  return '<div class="pie-row">'+pieSVG(segs,opt)+legend+'</div>';
+}
 function chartsHTML(d){
   const bars=barsSVG([
     {label:"Replacement (sensors)",value:d.replacements,color:CH.red},
@@ -901,7 +954,8 @@ function chartsHTML(d){
   return '<div class="rep-charts">'
     +'<div class="chart-card"><div class="chart-title">Completion</div>'+donutSVG(d.completed,APC_FLEET_TOTAL)+'<div class="chart-sub">'+d.completed+' of '+APC_FLEET_TOTAL+' fleet units · '+d.total+' inspected</div></div>'
     +'<div class="chart-card grow"><div class="chart-title">Issues across fleet</div>'+bars+'</div>'
-    +'</div>';
+    +'</div>'
+    +'<div class="rep-charts-pie"><div class="chart-card grow"><div class="chart-title">Calibration outcomes · adjusted sensors</div>'+pieCard(d)+'</div></div>';
 }
 function buildFleetReportHTML(d){
   const now=new Date(), esc=escapeHtml;
@@ -911,16 +965,17 @@ function buildFleetReportHTML(d){
     {label:"Water ingress (units)",value:d.waterUnits,color:CH.cyan},
     {label:"Calibration NOK (sensors)",value:d.calibration,color:CH.amber}
   ],{ink:"#111",dim:"#555",track:"#eaeaea"});
-  const rows=d.units.map(u=>'<tr><td>'+esc(u.id)+'</td><td>'+u.count+' / '+APC_EXPECTED+'</td><td>'+(u.complete?"Yes":"No")+'</td><td>'+u.repl.length+'</td><td>'+u.water.length+'</td><td>'+u.calib.length+'</td><td>'+esc(u.last||"\u2014")+'</td></tr>').join("");
+  const sslTd=v=>'<td'+(sslOk(v)?'':' class="fr-fail"')+'>'+esc(v||"\u2014")+'</td>';
+  const rows=d.units.map(u=>'<tr><td>'+esc(u.id)+'</td><td>'+u.count+' / '+APC_EXPECTED+'</td><td>'+(u.complete?"Yes":"No")+'</td>'+sslTd(u.m1Ssl)+sslTd(u.tcarSsl)+sslTd(u.m2Ssl)+'<td class="'+(u.pass?"fr-pass":"fr-fail")+'">'+(u.pass?"PASS":"FAIL")+'</td><td>'+u.repl.length+'</td><td>'+u.water.length+'</td><td>'+u.calib.length+'</td><td>'+esc(u.last||"\u2014")+'</td></tr>').join("");
   return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Report</h1></div>'
     +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+d.total+' units inspected</div></div>'
     +'<div class="fr-kpis"><div class="fr-kpi"><div class="v">'+d.completed+' / '+APC_FLEET_TOTAL+'</div><div class="k">Units completed</div></div>'
     +'<div class="fr-kpi"><div class="v">'+d.replacements+'</div><div class="k">Sensors need replacement</div></div>'
     +'<div class="fr-kpi"><div class="v">'+d.waterUnits+'</div><div class="k">Units with water ingress</div></div>'
-    +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div></div>'
+    +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div>'+'<div class="fr-kpi"><div class="v">'+d.passed+' / '+d.total+'</div><div class="k">Units passing (SSL &#8805;16)</div></div></div>'
     +'<div class="fr-charts"><div class="fr-chart"><h3>Completion</h3>'+donut+'</div><div class="fr-chart grow"><h3>Issues across fleet</h3>'+bars+'</div></div>'
-    +'<h3 class="fr-th">All units</h3>'
-    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Sensors</th><th>Complete</th><th>Replace</th><th>Water</th><th>Calib NOK</th><th>Last inspected</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="fr-chart" style="margin-bottom:22px"><h3>Calibration outcomes · adjusted sensors</h3>'+pieCard(d,{ink:"#111",dim:"#555",ring:"#ddd"})+'</div>'+'<h3 class="fr-th">All units</h3>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Sensors</th><th>Complete</th><th>M1 SSL</th><th>TCAR SSL</th><th>M2 SSL</th><th>Pass</th><th>Replace</th><th>Water</th><th>Calib NOK</th><th>Last inspected</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div class="fr-foot">Depot Control \u00b7 APC Fleet report \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
 }
 function generateApcReport(){ if(!reportsData) return; $("fleetReport").innerHTML=buildFleetReportHTML(reportsData); window.print(); }
@@ -956,10 +1011,14 @@ function renderApcUnit(u){
     '</tr>').join('');
   el.innerHTML=
     '<div class="rep-unit-head"><h3>'+escapeHtml(u.id)+'</h3>'+
+      '<span class="rep-pass '+(u.pass?"ok":"no")+'">'+(u.pass?"PASS":"FAIL")+'</span>'+
       chip(u.count+' / '+APC_EXPECTED,'sensors',!u.complete)+
       chip(u.repl.length,'replacements',u.repl.length>0)+
       chip(u.water.length,'water ingress',u.water.length>0)+
       chip(u.calib.length,'calibration NOK',u.calib.length>0)+
+      chip(u.m1Ssl||'\u2014','M1 SSL',!sslOk(u.m1Ssl))+
+      chip(u.tcarSsl||'\u2014','TCAR SSL',!sslOk(u.tcarSsl))+
+      chip(u.m2Ssl||'\u2014','M2 SSL',!sslOk(u.m2Ssl))+
     '</div>'+
     (u.comments?'<div class="rep-comments">\u201c'+escapeHtml(u.comments)+'\u201d</div>':'')+
     '<div class="rep-tablewrap"><table class="rep-table"><thead><tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calib.</th><th>Replace</th><th>Water</th></tr></thead><tbody>'+trs+'</tbody></table></div>';

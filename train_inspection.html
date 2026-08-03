@@ -212,6 +212,9 @@ button.ghost{background:transparent;}
 .ssl-field label{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
 .ssl-field input{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
 .ssl-field input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.ssl-field.flag input{border-color:var(--red);box-shadow:0 0 0 1px var(--red);}
+.ssl-field.flag label{color:var(--red);}
+.ssl-warn{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red);letter-spacing:.02em;}
 .trainid-box .chip{
   font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
   border:1px solid var(--stroke);border-radius:20px;padding:5px 12px;white-space:nowrap;
@@ -270,6 +273,8 @@ button.ghost{background:transparent;}
   #printReport .rep-summary div:last-child{border-right:none;}
   #printReport .rep-summary .num{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:700;}
   #printReport .rep-summary .lbl{font-size:9.5px;text-transform:uppercase;color:#666;letter-spacing:.05em;margin-top:2px;}
+  #printReport .rep-ssl{margin-bottom:24px;page-break-inside:avoid;}
+  #printReport .rep-ssl-title{font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:700;margin:0 0 8px;border-bottom:2px solid #111;padding-bottom:5px;}
 
   #printReport .rep-car-section{page-break-before:always;}
   #printReport .rep-car-section:first-of-type{page-break-before:auto;}
@@ -336,7 +341,7 @@ button.ghost{background:transparent;}
 </div>
 <div class="wrap">
   <p class="eyebrow">Rolling Stock · Door Sensor Audit</p>
-  <h1>3-Car Unit Inspection</h1>
+  <h1>APC Inspection</h1>
   <p class="sub">Click any door on the diagram to record the state, calibration, replacement need, and water ingress signs for its 4 sensors.</p>
 
   <div class="trainid-box">
@@ -350,6 +355,7 @@ button.ghost{background:transparent;}
     <div class="ssl-field"><label for="tcarSslInput">TCAR SSL Sensors</label><input type="text" id="tcarSslInput" autocomplete="off"></div>
     <div class="ssl-field"><label for="m2SslInput">M2 SSL Sensors</label><input type="text" id="m2SslInput" autocomplete="off"></div>
   </div>
+  <div class="ssl-warn" id="sslWarn" hidden></div>
 
   <div class="summary" id="summary">
     <div class="stat"><div class="n" id="statDoors">0 / 12</div><div class="l">Doors Inspected</div></div>
@@ -459,8 +465,8 @@ const CAR_W = 360, CAR_H = 150, CAR_Y = 135;
 const DOORS = ['D1','D2','D3','D4']; // physical placement per car set in DOOR_LAYOUT
 const SENSORS = ['S1','S2','S3','S4'];
 
-const STATE_OPTS = ['Not Tested','Operational','Fault Detected','Offline'];
-const CAL_OPTS = ['OK','NOK'];
+const STATE_OPTS = ['Not Tested','Operational','Fault Detected'];
+const CAL_OPTS = ['OK','Adjusted','NOK'];
 const REPL_OPTS = ['No','Yes'];
 const WATER_OPTS = ['Not Visible','Visible'];
 
@@ -474,9 +480,22 @@ const trainIdChip = document.getElementById('trainIdChip');
 const m1SslInput = document.getElementById('m1SslInput');
 const tcarSslInput = document.getElementById('tcarSslInput');
 const m2SslInput = document.getElementById('m2SslInput');
-m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); });
-tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); });
-m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); });
+m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); checkSslFlags(); });
+tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); checkSslFlags(); });
+m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); checkSslFlags(); });
+function checkSslFlags(){
+  const items = [['m1SslInput','M1'],['tcarSslInput','TCAR'],['m2SslInput','M2']];
+  const low = [];
+  items.forEach(([id,label]) => {
+    const inp = document.getElementById(id), field = inp.closest('.ssl-field');
+    const v = inp.value.trim(), n = parseInt(v, 10);
+    const bad = v !== '' && !isNaN(n) && n < 16;
+    if (field) field.classList.toggle('flag', bad);
+    if (bad) low.push(label);
+  });
+  const warn = document.getElementById('sslWarn');
+  if (warn) { if (low.length) { warn.hidden = false; warn.textContent = 'SSL count below 16 on: ' + low.join(', '); } else { warn.hidden = true; warn.textContent = ''; } }
+}
 trainIdInput.addEventListener('input', () => {
   trainId = trainIdInput.value.trim();
   trainIdChip.textContent = trainId ? trainId : 'Not set';
@@ -768,6 +787,17 @@ document.getElementById('btnReport').addEventListener('click', () => {
   if (rows.length < totalExpected){ statusClass = 'incomplete'; statusLabel = 'Incomplete'; }
   else if (flagged.length > 0){ statusClass = 'flagged'; statusLabel = 'Flagged'; }
 
+  const sslData = [{label:'M1 Car', v:m1Ssl}, {label:'T CAR', v:tcarSsl}, {label:'M2 Car', v:m2Ssl}];
+  const sslBad = v => { const n = parseInt(v, 10); return v !== '' && v != null && !isNaN(n) && n < 16; };
+  const sslLowCount = sslData.filter(d => sslBad(d.v)).length;
+  if (sslLowCount > 0 && statusClass === 'pass'){ statusClass = 'flagged'; statusLabel = 'Flagged'; }
+  const sslBlock = `<div class="rep-ssl"><h3 class="rep-ssl-title">SSL Sensor Counts</h3>`
+    + `<table><thead><tr><th>Car</th><th>SSL Count</th><th>Result</th></tr></thead><tbody>`
+    + sslData.map(d => { const bad = sslBad(d.v); const shown = (d.v === '' || d.v == null) ? '&mdash;' : d.v;
+        return `<tr><td>${d.label}</td><td ${bad?'class="rep-flag"':''}>${shown}</td>`
+             + `<td ${bad?'class="rep-flag"':''}>${bad ? 'Below 16' : (shown === '&mdash;' ? '&mdash;' : 'OK')}</td></tr>`; }).join('')
+    + `</tbody></table></div>`;
+
   let carSections = '';
   CARS.forEach(car => {
     carSections += `<div class="rep-car-section">
@@ -815,6 +845,8 @@ document.getElementById('btnReport').addEventListener('click', () => {
       <div><div class="num">${replaceCount}</div><div class="lbl">Replacement Required</div></div>
       <div><div class="num">${waterCount}</div><div class="lbl">Water Signs Visible</div></div>
     </div>
+
+    ${sslBlock}
 
     ${carSections}
 
@@ -916,6 +948,7 @@ function applyTrainPayload(payload, sourceLabel){
   commentsCount.textContent = `${comments.length} / 2000`;
   m1Ssl = payload.m1_ssl_sensors || ''; tcarSsl = payload.tcar_ssl_sensors || ''; m2Ssl = payload.m2_ssl_sensors || '';
   m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
+  checkSslFlags();
 
   CARS.forEach(car => DOORS.forEach(doorId => updateDoorStatus(car.id, doorId)));
   renderLog();

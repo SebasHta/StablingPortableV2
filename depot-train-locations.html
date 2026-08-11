@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#0c1116; --panel:#141c24; --panel-2:#1b2630;
@@ -285,6 +286,23 @@
   .reports-view{display:flex;flex-direction:column}
   .reports-body{flex:1;min-height:0;overflow:auto;padding:24px 22px 60px}
   #reportSubtabs,#reportContent{max-width:1040px;margin-left:auto;margin-right:auto}
+  #errStatus{margin-bottom:12px}
+  .btn.tiny{min-height:0;padding:5px 10px;font-size:11px;border-radius:6px}
+  .err-toolbar{display:flex;align-items:center;gap:12px;margin:0 0 12px;max-width:none}
+  #errSearch{background:#0c131a;border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:var(--mono);font-size:13px;padding:9px 12px;min-width:260px;outline:none}
+  #errSearch:focus{border-color:var(--rail-lit)}
+  #errCount{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
+  .err-actions{white-space:nowrap;display:flex;gap:6px}
+  #errorlogContent{max-width:none}
+  #errorlogContent .rep-tablewrap{max-width:none}
+  #errorlogContent .rep-table td{white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+  #errorlogContent .rep-table tbody tr:nth-child(odd){background:rgba(255,255,255,.022)}
+  #errorlogContent .rep-table tbody tr:nth-child(even){background:rgba(57,197,214,.06)}
+  #errorlogContent .rep-table tbody tr:hover{background:rgba(57,197,214,.16)}
+  #errorlogContent .rep-table tbody td{border-right:1px solid var(--line)}
+  #errorlogContent .rep-table tbody td:last-child{border-right:0}
+  #errorlogContent .rep-table tbody tr.err-unsaved{background:rgba(232,168,56,.14)!important}
+  #errorlogContent .rep-table tbody tr.err-unsaved td:first-child{border-left:3px solid var(--amber)}
   .rep-kpis{grid-template-columns:repeat(6,1fr);max-width:1040px;margin:8px auto 18px}
   .rep-kpis .kpi{padding:22px 24px}
   .rep-kpis .kpi .v{font-size:36px}
@@ -363,6 +381,7 @@
     <button data-view="stabling">Stabling</button>
     <button data-view="apc">APC</button>
     <button data-view="reports">Reports</button>
+    <button data-view="errorlog">Error Log</button>
   </nav>
   <div class="spacer"></div>
   <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
@@ -458,6 +477,31 @@
   </div>
 </section>
 
+<!-- APC ERROR LOG module -->
+<section class="view reports-view" id="errorlogView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="errorlogHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">APC Error Log</span>
+    <span class="sub">Upload &amp; store APC error reports</span>
+    <div class="spacer"></div>
+    <input type="file" id="errFile" accept=".xlsx,.xls,.csv" style="display:none">
+    <button class="btn" id="errUploadBtn">Upload file</button>
+    <button class="btn primary" id="errSaveBtn" style="display:none">Save</button>
+    <button class="btn icon" id="errorlogRefresh" title="Load stored logs">⟳</button>
+  </div>
+  <div class="reports-body"><div id="errStatus"></div><div id="errorlogContent"></div></div>
+</section>
+
+<div class="scrim" id="errEditScrim"></div>
+<div class="modal" id="errEditModal">
+  <div class="modal-head">
+    <div><div class="modal-eyebrow">APC Error Log</div><h3>Edit row</h3></div>
+    <button class="btn icon" id="errEditClose" title="Close">✕</button>
+  </div>
+  <div class="modal-body" id="errEditBody" style="max-height:58vh;overflow:auto"></div>
+  <div class="modal-foot"><span style="flex:1"></span><button class="btn" id="errEditCancel">Cancel</button><button class="btn primary" id="errEditSave">Apply</button></div>
+</div>
+
 <div class="scrim" id="scrim"></div>
 <div class="drawer" id="drawer">
   <header><h3>Connection</h3></header>
@@ -537,7 +581,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.9";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -729,8 +773,7 @@ let currentView="home";
 const MODULES=[
   {view:"stabling",live:true,name:"Stabling",desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
   {view:"apc",live:true,name:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
-  {view:null,live:false,name:"Monitoring",desc:"Real-time train & system status.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-15 2 9h6"/></svg>'},
-  {view:null,live:false,name:"Maintenance",desc:"Work orders, schedules & servicing.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 4.5a4 4 0 0 0-5 5l-6 6 2.5 2.5 6-6a4 4 0 0 0 5-5l-2.3 2.3-2.2-.6-.6-2.2z"/></svg>'},
+  {view:"errorlog",live:true,name:"APC Error Log",desc:"Every inspection issue across the fleet.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>'},
   {view:null,live:false,name:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
   {view:null,live:false,name:"Fleet",desc:"Unit register & availability.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="12" rx="3"/><path d="M6 11h12"/><path d="M9 20l1.5-3M15 20l-1.5-3"/></svg>'},
   {view:"reports",live:true,name:"Reports",desc:"Fleet analytics & inspection reports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
@@ -763,6 +806,7 @@ function showView(name){
   currentView=name;
   if(name==="home") renderHomeKPIs();
   if(name==="reports") openReports();
+  if(name==="errorlog") openErrorLog();
 }
 
 /* ---------- alarms / audio ---------- */
@@ -804,6 +848,184 @@ const REPORT_SUBS=[{key:"apcfleet",name:"APC Fleet"}];
 let reportsData=null, reportsLoading=false, activeReportSub="apcfleet";
 const APC_EXPECTED=48; // 3 cars x 4 doors x 4 sensors
 const APC_FLEET_TOTAL=95; // total units in the fleet
+
+/* ---------- APC Error Log: file import + store ---------- */
+let errData=null; // {file, sheet, headers, keys, rows}
+function openErrorLog(){ const el=$("errorlogContent"); if(el && !errData && !el.innerHTML.trim()) el.innerHTML='<div class="rep-empty">Upload an APC error report (.xlsx or .csv) to view it and save it to Back4App.</div>'; }
+function errSetStatus(kind,msg){ const el=$("errStatus"); if(el) el.innerHTML=msg?'<div class="msg '+kind+'" style="display:inline-block;margin:0">'+escapeHtml(msg)+'</div>':''; }
+function errSafeField(h, used){
+  let k=(h==null?'':h.toString()).trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+  if(!k) k='col';
+  if(/^[0-9]/.test(k)) k='c_'+k;
+  if(["objectid","createdat","updatedat","acl"].includes(k)) k=k+'_v';
+  let base=k,i=2; while(used.has(k)){ k=base+'_'+i; i++; } used.add(k); return k;
+}
+function handleErrFile(file){
+  if(!file) return;
+  if(typeof XLSX==='undefined'){ errSetStatus('bad','Spreadsheet reader not loaded (offline?).'); return; }
+  errSetStatus('info','Reading '+file.name+'\u2026');
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const sheet=wb.SheetNames[0];
+      const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sheet],{header:1,raw:false,defval:''});
+      let hi=0; while(hi<aoa.length && (aoa[hi]||[]).every(c=>(c==null||c.toString().trim()===''))) hi++;
+      const headers=(aoa[hi]||[]).map((h,i)=>(h==null||h.toString().trim()==='')?('Column '+(i+1)):h.toString().trim());
+      const used=new Set(); const keys=headers.map(h=>errSafeField(h,used));
+      const rows=[];
+      for(let r=hi+1;r<aoa.length;r++){
+        const arr=aoa[r]||[];
+        if(arr.every(c=>(c==null||c.toString().trim()===''))) continue;
+        const obj={cells:[]};
+        headers.forEach((h,i)=>{ const v=(arr[i]==null?'':arr[i].toString()); obj[keys[i]]=v; obj.cells.push(v); });
+        rows.push(obj);
+      }
+      errData={file:file.name, sheet, headers, keys, rows};
+      renderErrTable();
+      $("errSaveBtn").style.display = rows.length ? '' : 'none';
+      errSetStatus('ok', file.name+' \u00b7 sheet "'+sheet+'" \u00b7 '+rows.length+' row(s). Review below, then Save to Back4App.');
+    }catch(err){ errSetStatus('bad','Couldn\u2019t read the file: '+(err.message||err)); }
+  };
+  reader.onerror=()=>errSetStatus('bad','Failed to read the file.');
+  reader.readAsArrayBuffer(file);
+}
+function renderErrTable(){
+  const el=$("errorlogContent"); if(!el||!errData) return;
+  const head='<tr>'+errData.headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr>';
+  const body=errData.rows.slice(0,300).map(row=>'<tr>'+row.cells.map(c=>'<td>'+escapeHtml(c)+'</td>').join('')+'</tr>').join('');
+  const more=errData.rows.length>300?'<div class="rep-empty">Showing first 300 of '+errData.rows.length+' rows (all will be saved).</div>':'';
+  el.innerHTML='<div class="rep-tablewrap"><table class="rep-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'+more;
+}
+async function saveErrToB4a(){
+  if(!errData || !errData.rows.length) return;
+  if(typeof Parse==='undefined'){ errSetStatus('bad','Parse SDK not loaded.'); return; }
+  if(!CONFIG.appId||!CONFIG.jsKey){ errSetStatus('bad','Add your App ID and JavaScript Key in \u2699 first.'); return; }
+  if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+  if(!Parse.User.current()){ errSetStatus('bad','Not signed in \u2014 sign in from the main app first.'); return; }
+  errSetStatus('info','Saving '+errData.rows.length+' row(s) to \u201cApcErrorLog\u201d\u2026');
+  $("errSaveBtn").disabled=true;
+  try{
+    const now=new Date().toISOString();
+    const objs=errData.rows.map(row=>{
+      const o=new Parse.Object("ApcErrorLog");
+      errData.keys.forEach(k=>o.set(k,row[k]));
+      o.set("source_file",errData.file); o.set("source_sheet",errData.sheet); o.set("imported_at",now);
+      return o;
+    });
+    for(let i=0;i<objs.length;i+=200) await Parse.Object.saveAll(objs.slice(i,i+200));
+    errSetStatus('ok','Saved '+objs.length+' row(s) to \u201cApcErrorLog\u201d as '+Parse.User.current().getUsername()+'.');
+  }catch(err){
+    errSetStatus('bad','Save failed: '+(err.message||err)+' \u2014 the ApcErrorLog class must allow the signed-in user to create records.');
+  }
+  $("errSaveBtn").disabled=false;
+}
+let storedObjs=[], storedCols=[], errEditIdx=-1, errEditNew=false;
+async function loadStoredErrors(){
+  const el=$("errorlogContent"); errData=null; $("errSaveBtn").style.display='none';
+  errSetStatus('info','Loading stored error logs\u2026');
+  try{
+    if(typeof Parse==='undefined') throw new Error('Parse SDK not loaded.');
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    const q=new Parse.Query("ApcErrorLog"); q.limit(1000); q.descending("createdAt");
+    const res=await q.find();
+    storedObjs=res.slice();
+    const cols=[]; const seen=new Set(); const skip=new Set(["ACL","objectId","createdAt","updatedAt","source_file","source_sheet","imported_at"]);
+    res.forEach(o=>{ Object.keys(o.attributes).forEach(k=>{ if(!skip.has(k)&&!seen.has(k)){ seen.add(k); cols.push(k); } }); });
+    storedCols=cols;
+    el.innerHTML='<div class="err-toolbar">'
+      +'<input id="errSearch" placeholder="filter rows\u2026" autocomplete="off">'
+      +'<button class="btn tiny" id="errAddBtn">+ Add row</button>'
+      +'<button class="btn tiny primary" id="errSaveAllBtn">Save</button>'
+      +'<button class="btn tiny" id="errDlXlsx">\u2b07 XLSX</button>'
+      +'<button class="btn tiny" id="errDlCsv">\u2b07 CSV</button>'
+      +'<span id="errCount"></span></div><div id="errTableWrap"></div>';
+    $("errSearch").addEventListener("input", renderStoredTable);
+    $("errAddBtn").onclick=openErrAdd;
+    $("errSaveAllBtn").onclick=saveDirtyStored;
+    $("errDlXlsx").onclick=()=>downloadTable('xlsx');
+    $("errDlCsv").onclick=()=>downloadTable('csv');
+    renderStoredTable();
+    errSetStatus(res.length?'ok':'info', res.length ? (res.length+' stored row(s). Add / Edit, then Save. Download as XLSX or CSV.') : 'No stored rows yet \u2014 upload a file, or Add row.');
+  }catch(err){ errSetStatus('bad','Couldn\u2019t load: '+(err.message||err)); }
+}
+function renderStoredTable(){
+  const wrap=$("errTableWrap"); if(!wrap) return;
+  const term=(($("errSearch")&&$("errSearch").value)||'').toLowerCase();
+  const shown=storedObjs.filter(o=> !term || storedCols.some(c=>{ const v=o.get(c); return v!=null && v.toString().toLowerCase().includes(term); }));
+  const cnt=$("errCount"); if(cnt) cnt.textContent=shown.length+' of '+storedObjs.length+' row(s)';
+  const head='<tr>'+storedCols.map(c=>'<th>'+escapeHtml(c)+'</th>').join('')+'<th>Actions</th></tr>';
+  const body=shown.map(o=>{ const idx=storedObjs.indexOf(o); const unsaved=(!o.id)||(o.dirty&&o.dirty());
+    return '<tr'+(unsaved?' class="err-unsaved"':'')+'>'+storedCols.map(c=>{ const v=o.get(c); return '<td>'+escapeHtml((v==null?'':v).toString())+'</td>'; }).join('')+
+      '<td class="err-actions"><button class="btn tiny" data-edit="'+idx+'">Edit</button><button class="btn tiny danger" data-del="'+idx+'">Delete</button></td></tr>';
+  }).join('');
+  wrap.innerHTML='<div class="rep-tablewrap"><table class="rep-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
+  wrap.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openErrEdit(+b.getAttribute('data-edit')));
+  wrap.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteStored(+b.getAttribute('data-del')));
+}
+async function deleteStored(idx){
+  const o=storedObjs[idx]; if(!o) return;
+  if(!confirm('Delete this error-log row? This cannot be undone.')) return;
+  try{ if(o.id) await o.destroy(); storedObjs.splice(idx,1); renderStoredTable(); errSetStatus('ok','Row deleted.'); }
+  catch(err){ errSetStatus('bad','Delete failed: '+(err.message||err)); }
+}
+function openErrEdit(idx){
+  const o=storedObjs[idx]; if(!o) return; errEditIdx=idx; errEditNew=false;
+  const _h=$("errEditModal").querySelector('h3'); if(_h) _h.textContent='Edit row';
+  $("errEditBody").innerHTML=storedCols.map(c=>{ const v=(o.get(c)==null?'':o.get(c)).toString();
+    return '<div class="field"><label>'+escapeHtml(c)+'</label><input data-fld="'+escapeHtml(c)+'" value="'+escapeHtml(v)+'"></div>';
+  }).join('');
+  $("errEditScrim").classList.add("open"); $("errEditModal").classList.add("open");
+  setTimeout(()=>{ const f=$("errEditBody").querySelector('input'); if(f) f.focus(); },60);
+}
+function closeErrEdit(){ $("errEditScrim").classList.remove("open"); $("errEditModal").classList.remove("open"); errEditIdx=-1; }
+function openErrAdd(){
+  if(!storedCols.length){ errSetStatus('info','Load or upload data first so the columns are known.'); return; }
+  errEditIdx=-1; errEditNew=true;
+  const _h=$("errEditModal").querySelector('h3'); if(_h) _h.textContent='Add row';
+  $("errEditBody").innerHTML=storedCols.map(c=>'<div class="field"><label>'+escapeHtml(c)+'</label><input data-fld="'+escapeHtml(c)+'" value=""></div>').join('');
+  $("errEditScrim").classList.add("open"); $("errEditModal").classList.add("open");
+  setTimeout(()=>{ const f=$("errEditBody").querySelector('input'); if(f) f.focus(); },60);
+}
+function saveErrEdit(){ // stages the row locally; toolbar Save commits to Back4App
+  if(errEditNew){
+    const o=new Parse.Object("ApcErrorLog");
+    $("errEditBody").querySelectorAll('[data-fld]').forEach(inp=>o.set(inp.getAttribute('data-fld'), inp.value));
+    o.set("source_file","manual entry"); o.set("imported_at",new Date().toISOString());
+    storedObjs.unshift(o); errSetStatus('info','Row added (unsaved). Click Save to commit to Back4App.');
+  } else {
+    const o=storedObjs[errEditIdx]; if(o){ $("errEditBody").querySelectorAll('[data-fld]').forEach(inp=>o.set(inp.getAttribute('data-fld'), inp.value)); errSetStatus('info','Row edited (unsaved). Click Save to commit.'); }
+  }
+  renderStoredTable(); closeErrEdit();
+}
+async function saveDirtyStored(){
+  if(typeof Parse==='undefined'){ errSetStatus('bad','Parse SDK not loaded.'); return; }
+  if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+  if(!Parse.User.current()){ errSetStatus('bad','Not signed in \u2014 sign in from the main app first.'); return; }
+  const dirty=storedObjs.filter(o=> (!o.id) || (o.dirty&&o.dirty()));
+  if(!dirty.length){ errSetStatus('info','No unsaved changes.'); return; }
+  const btn=$("errSaveAllBtn"); if(btn) btn.disabled=true;
+  errSetStatus('info','Saving '+dirty.length+' change(s) to Back4App\u2026');
+  try{
+    for(let i=0;i<dirty.length;i+=200) await Parse.Object.saveAll(dirty.slice(i,i+200));
+    renderStoredTable(); errSetStatus('ok','Saved '+dirty.length+' change(s) to \u201cApcErrorLog\u201d.');
+  }catch(err){ errSetStatus('bad','Save failed: '+(err.message||err)+' \u2014 the class must allow Create/Update for the signed-in user.'); }
+  if(btn) btn.disabled=false;
+}
+function downloadTable(fmt){
+  if(typeof XLSX==='undefined'){ errSetStatus('bad','Spreadsheet writer not loaded.'); return; }
+  let cols, rows;
+  if(storedObjs.length){ cols=storedCols; rows=storedObjs.map(o=>storedCols.map(c=>{ const v=o.get(c); return v==null?'':v; })); }
+  else if(errData){ cols=errData.headers; rows=errData.rows.map(r=>r.cells); }
+  else { errSetStatus('info','Nothing to download.'); return; }
+  try{
+    const ws=XLSX.utils.aoa_to_sheet([cols].concat(rows));
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"ApcErrorLog");
+    const name="apc_error_log_"+new Date().toISOString().slice(0,10)+(fmt==='csv'?'.csv':'.xlsx');
+    XLSX.writeFile(wb,name,{bookType: fmt==='csv'?'csv':'xlsx'});
+    errSetStatus('ok','Downloaded '+name+'.');
+  }catch(err){ errSetStatus('bad','Download failed: '+(err.message||err)); }
+}
 
 function openReports(){
   renderReportSubtabs();
@@ -1382,13 +1604,20 @@ $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
 $("reportsHome").onclick=()=>showView("home");
 $("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
+$("errorlogHome").onclick=()=>showView("home");
+$("errUploadBtn").onclick=()=>$("errFile").click();
+$("errFile").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; handleErrFile(f); e.target.value=""; });
+$("errSaveBtn").onclick=saveErrToB4a;
+$("errorlogRefresh").onclick=loadStoredErrors;
+$("errEditClose").onclick=closeErrEdit; $("errEditCancel").onclick=closeErrEdit; $("errEditScrim").onclick=closeErrEdit;
+$("errEditSave").onclick=saveErrEdit;
 $("soundBtn").onclick=()=>{ soundOn=!soundOn; updateSoundBtn(); if(soundOn){ initAudio(); playInfo(); } };
 document.addEventListener("pointerdown",initAudio);
 document.addEventListener("keydown",initAudio);
 $("loginUser").addEventListener("keydown",e=>{ if(e.key==="Enter") $("loginPass").focus(); });
 $("loginPass").addEventListener("keydown",e=>{ if(e.key==="Enter") doLogin(); });
 $("signOutBtn").onclick=signOut;
-document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeCfg(); closeEdit(); } });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeCfg(); closeEdit(); closeErrEdit(); } });
 
 /* ---------- boot ---------- */
 (function init(){

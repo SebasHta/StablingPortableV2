@@ -82,7 +82,7 @@
   .fr-eyebrow{font-family:ui-monospace,monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#666}
   .fr-head h1{font-family:'Barlow Condensed','Inter',sans-serif;text-transform:uppercase;letter-spacing:.04em;font-size:30px;margin:2px 0 0;color:#111}
   .fr-meta{font-family:ui-monospace,monospace;font-size:11px;color:#555;text-align:right;line-height:1.6}
-  .fr-kpis{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #ccc;margin-bottom:22px}
+  .fr-kpis{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #ccc;margin-bottom:22px}
   .fr-kpi{padding:12px 16px;border-right:1px solid #ccc}
   .fr-kpi:last-child{border-right:0}
   .fr-kpi .v{font-family:ui-monospace,monospace;font-size:24px;font-weight:700;color:#111}
@@ -96,13 +96,14 @@
   .fr-table td{padding:6px 9px;border:1px solid #ccc}
   .fr-table td.fr-fail{color:#c0392b;font-weight:700}
   .fr-table td.fr-pass{color:#1e7d34;font-weight:700}
+  .fr-table td.fr-prog{color:#b8860b;font-weight:700}
   .fr-table tr{page-break-inside:avoid}
   .fr-foot{margin-top:18px;font-family:ui-monospace,monospace;font-size:9.5px;color:#999;text-align:center}
   @media print{
-    @page{margin:14mm}
+    @page{margin:0}
     body{background:#fff!important}
     body>*{display:none!important}
-    #fleetReport{display:block!important;color:#111;font-family:'Inter',system-ui,sans-serif}
+    #fleetReport{display:block!important;color:#111;font-family:'Inter',system-ui,sans-serif;padding:14mm}
   }
   .yard{grid-area:yard;padding:14px 22px 40px;overflow:auto}
   .section{margin-bottom:26px}
@@ -284,7 +285,7 @@
   .reports-view{display:flex;flex-direction:column}
   .reports-body{flex:1;min-height:0;overflow:auto;padding:24px 22px 60px}
   #reportSubtabs,#reportContent{max-width:1040px;margin-left:auto;margin-right:auto}
-  .rep-kpis{grid-template-columns:repeat(4,1fr);max-width:1040px;margin:8px auto 18px}
+  .rep-kpis{grid-template-columns:repeat(6,1fr);max-width:1040px;margin:8px auto 18px}
   .rep-kpis .kpi{padding:22px 24px}
   .rep-kpis .kpi .v{font-size:36px}
   .rep-kpis .kpi .k{font-size:13px}
@@ -311,6 +312,7 @@
   .rep-pass{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;border-radius:999px;padding:5px 13px;border:1px solid}
   .rep-pass.ok{color:var(--green);border-color:var(--green)}
   .rep-pass.no{color:var(--red);border-color:var(--red)}
+  .rep-pass.prog{color:var(--amber);border-color:var(--amber)}
   .rep-chip{font-family:var(--mono);font-size:13px;color:var(--ink-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:6px 14px}
   .rep-chip b{color:var(--ink)}
   .rep-chip.warn{border-color:var(--red);color:#f0a8a4}
@@ -533,9 +535,9 @@
 
 <script>
 /* ============================================================
-   APP VERSION — bump this on every change.
+   APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "16";
+const APP_VERSION = "1.0";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -801,7 +803,7 @@ function checkAlarms(){
 const REPORT_SUBS=[{key:"apcfleet",name:"APC Fleet"}];
 let reportsData=null, reportsLoading=false, activeReportSub="apcfleet";
 const APC_EXPECTED=48; // 3 cars x 4 doors x 4 sensors
-const APC_FLEET_TOTAL=99; // total units in the fleet
+const APC_FLEET_TOTAL=95; // total units in the fleet
 
 function openReports(){
   renderReportSubtabs();
@@ -827,7 +829,7 @@ async function fetchInspections(){
     const q=new Parse.Query("DoorSensorInspection"); q.limit(page); q.skip(skip);
     const res=await q.find();
     res.forEach(o=>out.push({train_id:o.get("train_id"),car:o.get("car"),door:o.get("door"),sensor:o.get("sensor"),
-      state:o.get("state"),calibration:o.get("calibration"),replacement_required:o.get("replacement_required"),
+      state:o.get("state"),calibration:o.get("calibration"),replacement_required:o.get("replacement_required"),replacement_completed:o.get("replacement_completed"),
       water_signs:o.get("water_signs"),m1_ssl_sensors:o.get("m1_ssl_sensors"),tcar_ssl_sensors:o.get("tcar_ssl_sensors"),m2_ssl_sensors:o.get("m2_ssl_sensors"),comments:o.get("comments"),timestamp:o.get("timestamp")}));
     if(res.length<page) break; skip+=page;
   }
@@ -839,13 +841,14 @@ function apcDemoData(){
   units.forEach((u,ui)=>cars.forEach(c=>doors.forEach(d=>sensors.forEach(sn=>{
     const rep=(ui===0&&c==="Car B"&&d==="D2"&&sn==="S3")||(ui===2&&c==="Car A"&&d==="D4"&&sn==="S1");
     const water=(ui===1&&c==="Car A"&&d==="D1"&&sn==="S1");
-    out.push({train_id:u,car:c,door:d,sensor:sn,state:"OK",calibration:(ui===0&&c==="Car C"&&sn==="S2")?"NOK":((ui===1&&c==="Car B")?"Adjusted":"OK"),
-      replacement_required:rep?"Yes":"No",water_signs:water?"Visible":"Not Visible",
+    out.push({train_id:u,car:c,door:d,sensor:sn,state:(ui===2?"Not Tested":"OK"),calibration:(ui===0&&c==="Car C"&&sn==="S2")?"NOK":((ui===1&&c==="Car B")?"Adjusted":"OK"),
+      replacement_required:rep?"Yes":"No",replacement_completed:(ui===0&&c==="Car B"&&d==="D2"&&sn==="S3")?"Yes":"No",water_signs:water?"Visible":"Not Visible",
       comments:ui===0?"Routine 6-monthly":"",m1_ssl_sensors:"16",tcar_ssl_sensors:(ui===1?"14":"16"),m2_ssl_sensors:"16",timestamp:"2026-06-2"+ui+"T08:00:00Z"});
   }))));
   return out.filter(r=>!(r.train_id==="ADL103"&&r.car==="Car C")); // ADL103 left incomplete
 }
 function sslOk(v){ const n=parseInt(v,10); return !isNaN(n) && n>=16; }
+function unitResult(u){ return u.inProgress ? 'progress' : (u.pass ? 'pass' : 'fail'); }
 function apcStats(rows){
   const units={};
   rows.forEach(r=>{
@@ -863,21 +866,25 @@ function apcStats(rows){
   });
   const list=Object.values(units).map(u=>{
     const s=Object.values(u.sensors);
-    return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED,sensors:s,comments:u.comments,last:u.last,
-      repl:s.filter(x=>x.replacement_required==="Yes"),
+    return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED&&!s.some(x=>x.state==="Not Tested"),sensors:s,comments:u.comments,last:u.last,
+      repl:s.filter(x=>x.replacement_required==="Yes"&&x.replacement_completed!=="Yes"),
+      replDone:s.filter(x=>x.replacement_completed==="Yes"),
       water:s.filter(x=>x.water_signs==="Visible"),
       calib:s.filter(x=>x.calibration==="NOK"),
       adjusted:s.filter(x=>x.calibration==="Adjusted"),
       calOk:s.filter(x=>x.calibration==="OK"),
       m1Ssl:u.m1Ssl,tcarSsl:u.tcarSsl,m2Ssl:u.m2Ssl,
-      pass:sslOk(u.m1Ssl)&&sslOk(u.tcarSsl)&&sslOk(u.m2Ssl)};
+      inProgress:s.some(x=>x.state==="Not Tested"),
+      pass:sslOk(u.m1Ssl)&&sslOk(u.tcarSsl)&&sslOk(u.m2Ssl)&&s.filter(x=>x.replacement_required==="Yes"&&x.replacement_completed!=="Yes").length===0&&s.filter(x=>x.water_signs==="Visible").length===0};
   }).sort((a,b)=>a.id.localeCompare(b.id));
   return {units:list,completed:list.filter(u=>u.complete).length,total:list.length,
     replacements:list.reduce((n,u)=>n+u.repl.length,0),
+    replacementsDone:list.reduce((n,u)=>n+u.replDone.length,0),
     waterUnits:list.filter(u=>u.water.length>0).length,
     calibration:list.reduce((n,u)=>n+u.calib.length,0),
     calibUnits:list.filter(u=>u.calib.length>0).length,
-    passed:list.filter(u=>u.pass).length,
+    passed:list.filter(u=>unitResult(u)==='pass').length,
+    inProgress:list.filter(u=>unitResult(u)==='progress').length,
     adjusted:list.reduce((n,u)=>n+u.adjusted.length,0),
     calOk:list.reduce((n,u)=>n+u.calOk.length,0)};
 }
@@ -966,19 +973,19 @@ function buildFleetReportHTML(d){
     {label:"Calibration NOK (sensors)",value:d.calibration,color:CH.amber}
   ],{ink:"#111",dim:"#555",track:"#eaeaea"});
   const sslTd=v=>'<td'+(sslOk(v)?'':' class="fr-fail"')+'>'+esc(v||"\u2014")+'</td>';
-  const rows=d.units.map(u=>'<tr><td>'+esc(u.id)+'</td><td>'+u.count+' / '+APC_EXPECTED+'</td><td>'+(u.complete?"Yes":"No")+'</td>'+sslTd(u.m1Ssl)+sslTd(u.tcarSsl)+sslTd(u.m2Ssl)+'<td class="'+(u.pass?"fr-pass":"fr-fail")+'">'+(u.pass?"PASS":"FAIL")+'</td><td>'+u.repl.length+'</td><td>'+u.water.length+'</td><td>'+u.calib.length+'</td><td>'+esc(u.last||"\u2014")+'</td></tr>').join("");
+  const rows=d.units.map(u=>'<tr><td>'+esc(u.id)+'</td><td>'+u.count+' / '+APC_EXPECTED+'</td><td>'+(u.complete?"Yes":"No")+'</td>'+sslTd(u.m1Ssl)+sslTd(u.tcarSsl)+sslTd(u.m2Ssl)+'<td class="'+(unitResult(u)==="pass"?"fr-pass":(unitResult(u)==="fail"?"fr-fail":"fr-prog"))+'">'+(unitResult(u)==="pass"?"PASS":(unitResult(u)==="fail"?"FAIL":"IN PROGRESS"))+'</td><td>'+u.repl.length+'</td><td>'+u.replDone.length+'</td><td>'+u.water.length+'</td><td>'+u.calib.length+'</td><td>'+esc(u.last||"\u2014")+'</td></tr>').join("");
   return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Report</h1></div>'
     +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+d.total+' units inspected</div></div>'
     +'<div class="fr-kpis"><div class="fr-kpi"><div class="v">'+d.completed+' / '+APC_FLEET_TOTAL+'</div><div class="k">Units completed</div></div>'
-    +'<div class="fr-kpi"><div class="v">'+d.replacements+'</div><div class="k">Sensors need replacement</div></div>'
+    +'<div class="fr-kpi"><div class="v">'+d.replacements+'</div><div class="k">Sensors need replacement</div></div>'+'<div class="fr-kpi"><div class="v">'+d.replacementsDone+'</div><div class="k">Replacements completed</div></div>'
     +'<div class="fr-kpi"><div class="v">'+d.waterUnits+'</div><div class="k">Units with water ingress</div></div>'
-    +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div>'+'<div class="fr-kpi"><div class="v">'+d.passed+' / '+d.total+'</div><div class="k">Units passing (SSL &#8805;16)</div></div></div>'
+    +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div>'+'<div class="fr-kpi"><div class="v">'+d.passed+' / '+d.total+'</div><div class="k">Units passing (all checks)</div></div>'+'<div class="fr-kpi">'+'<div class="v">'+d.inProgress+'</div><div class="k">Units in progress</div></div></div>'
     +'<div class="fr-charts"><div class="fr-chart"><h3>Completion</h3>'+donut+'</div><div class="fr-chart grow"><h3>Issues across fleet</h3>'+bars+'</div></div>'
     +'<div class="fr-chart" style="margin-bottom:22px"><h3>Calibration outcomes · adjusted sensors</h3>'+pieCard(d,{ink:"#111",dim:"#555",ring:"#ddd"})+'</div>'+'<h3 class="fr-th">All units</h3>'
-    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Sensors</th><th>Complete</th><th>M1 SSL</th><th>TCAR SSL</th><th>M2 SSL</th><th>Pass</th><th>Replace</th><th>Water</th><th>Calib NOK</th><th>Last inspected</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Sensors</th><th>Complete</th><th>M1 SSL</th><th>TCAR SSL</th><th>M2 SSL</th><th>Pass</th><th>Replace</th><th>Compl.</th><th>Water</th><th>Calib NOK</th><th>Last inspected</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div class="fr-foot">Depot Control \u00b7 APC Fleet report \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
 }
-function generateApcReport(){ if(!reportsData) return; $("fleetReport").innerHTML=buildFleetReportHTML(reportsData); window.print(); }
+function generateApcReport(){ if(!reportsData) return; $("fleetReport").innerHTML=buildFleetReportHTML(reportsData); const _t=document.title; document.title=""; window.print(); document.title=_t; }
 function renderApcFleet(){
   const d=reportsData; if(!d){ loadReports(); return; }
   const kpi=(v,k,warn)=>'<div class="kpi'+(warn?' warn':'')+'"><div class="v">'+v+'</div><div class="k">'+k+'</div></div>';
@@ -987,7 +994,9 @@ function renderApcFleet(){
     '<div class="rep-toolbar"><button class="btn" id="apcReportBtn">Generate report</button></div>'+
     '<div class="kpis rep-kpis">'+
       kpi(d.completed+' / '+APC_FLEET_TOTAL,'units completed')+
+      kpi(d.inProgress,'units in progress')+
       kpi(d.replacements,'sensors need replacement',d.replacements>0)+
+      kpi(d.replacementsDone,'replacements completed')+
       kpi(d.waterUnits,'units with water ingress',d.waterUnits>0)+
       kpi(d.calibration,'calibration NOK',d.calibration>0)+
     '</div>'+
@@ -1007,11 +1016,12 @@ function renderApcUnit(u){
     '<td>'+escapeHtml(r.state||'\u2014')+'</td>'+
     '<td class="'+(r.calibration==="NOK"?"flag":"")+'">'+escapeHtml(r.calibration||'\u2014')+'</td>'+
     '<td class="'+(r.replacement_required==="Yes"?"flag":"")+'">'+escapeHtml(r.replacement_required||'\u2014')+'</td>'+
+    '<td>'+escapeHtml(r.replacement_completed||'No')+'</td>'+
     '<td class="'+(r.water_signs==="Visible"?"flag":"")+'">'+escapeHtml(r.water_signs||'\u2014')+'</td>'+
     '</tr>').join('');
   el.innerHTML=
     '<div class="rep-unit-head"><h3>'+escapeHtml(u.id)+'</h3>'+
-      '<span class="rep-pass '+(u.pass?"ok":"no")+'">'+(u.pass?"PASS":"FAIL")+'</span>'+
+      '<span class="rep-pass '+(unitResult(u)==="pass"?"ok":(unitResult(u)==="fail"?"no":"prog"))+'">'+(unitResult(u)==="pass"?"PASS":(unitResult(u)==="fail"?"FAIL":"IN PROGRESS"))+'</span>'+
       chip(u.count+' / '+APC_EXPECTED,'sensors',!u.complete)+
       chip(u.repl.length,'replacements',u.repl.length>0)+
       chip(u.water.length,'water ingress',u.water.length>0)+
@@ -1021,7 +1031,7 @@ function renderApcUnit(u){
       chip(u.m2Ssl||'\u2014','M2 SSL',!sslOk(u.m2Ssl))+
     '</div>'+
     (u.comments?'<div class="rep-comments">\u201c'+escapeHtml(u.comments)+'\u201d</div>':'')+
-    '<div class="rep-tablewrap"><table class="rep-table"><thead><tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calib.</th><th>Replace</th><th>Water</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
+    '<div class="rep-tablewrap"><table class="rep-table"><thead><tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calib.</th><th>Replace</th><th>Repl. Done</th><th>Water</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
 }
 
 /* ---------- render ---------- */

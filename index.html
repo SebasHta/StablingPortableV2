@@ -229,9 +229,9 @@
 
 <script>
 /* ============================================================
-   APP VERSION — bump on every change.
+   APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "3";
+const APP_VERSION = "1.0";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -256,9 +256,9 @@ const AUTH = {
 
 /* Connection — hardcode here or use the ⚙ drawer. No browser storage used. */
 const CONFIG = {
-  live:true,
+  live:false,
   serverURL:"https://parseapi.back4app.com/",
-  appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM",
+  appId:"", jsKey:"",
   className:"TrainLocation",
   fields:{ unit:"unit", road:"road", berth:"berth", status:"status", detail:"destination" }
 };

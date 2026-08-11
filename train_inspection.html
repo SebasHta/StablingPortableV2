@@ -95,6 +95,7 @@ svg{width:100%;height:auto;display:block;}
 .door.status-partial{fill:#3a3120;stroke:var(--amber);}
 .door.status-complete{fill:#1f3a2c;stroke:var(--green);}
 .door.status-issue{fill:#3a2321;stroke:var(--red);}
+.door.status-replaced{fill:#1b2c3f;stroke:#4a90d9;}
 
 /* ---- data log ---- */
 .log-panel{
@@ -212,6 +213,8 @@ button.ghost{background:transparent;}
 .ssl-field label{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
 .ssl-field input{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
 .ssl-field input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.ssl-field select{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
+.ssl-field select:focus{outline:2px solid var(--cyan);outline-offset:1px;}
 .ssl-field.flag input{border-color:var(--red);box-shadow:0 0 0 1px var(--red);}
 .ssl-field.flag label{color:var(--red);}
 .ssl-warn{margin-top:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--red);letter-spacing:.02em;}
@@ -268,7 +271,7 @@ button.ghost{background:transparent;}
   #printReport .rep-status.flagged{background:#fbe9e7;color:#a3291d;border:1px solid #a3291d;}
   #printReport .rep-status.incomplete{background:#fff4e0;color:#8a5a00;border:1px solid #8a5a00;}
 
-  #printReport .rep-summary{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #ccc;margin-bottom:26px;page-break-inside:avoid;}
+  #printReport .rep-summary{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #ccc;margin-bottom:26px;page-break-inside:avoid;}
   #printReport .rep-summary div{padding:10px 14px;border-right:1px solid #ccc;}
   #printReport .rep-summary div:last-child{border-right:none;}
   #printReport .rep-summary .num{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:700;}
@@ -303,9 +306,6 @@ button.ghost{background:transparent;}
   }
   #printReport .rep-comments .rep-comments-empty{color:#999;font-style:italic;}
 
-  #printReport .rep-signoff{margin-top:36px;display:grid;grid-template-columns:1fr 1fr;gap:50px;page-break-inside:avoid;}
-  #printReport .rep-signoff .sig-line{border-top:1px solid #333;padding-top:6px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;}
-  #printReport .rep-signoff .sig-label{color:#777;font-size:9px;text-transform:uppercase;letter-spacing:.05em;margin-top:3px;}
   #printReport .rep-footer-note{margin-top:24px;font-size:9px;color:#888;font-family:'IBM Plex Mono',monospace;border-top:1px dashed #ccc;padding-top:8px;}
 }
 /* ---- left quick-link toolbar ---- */
@@ -330,6 +330,15 @@ button.ghost{background:transparent;}
   .quicklinks{position:static;flex-direction:row;flex-wrap:wrap;align-items:center;margin:0 0 20px;top:auto;left:auto;}
   .quicklinks .ql-label{border-bottom:none;border-right:1px solid var(--stroke);padding-bottom:0;padding-right:12px;margin-bottom:0;}
 }
+  .import-scrim{position:fixed;inset:0;background:rgba(6,9,14,.6);opacity:0;pointer-events:none;transition:.2s;z-index:60;}
+  .import-scrim.open{opacity:1;pointer-events:auto;}
+  .import-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-46%);width:360px;max-width:92vw;z-index:70;background:var(--panel);border:1px solid var(--stroke);border-radius:14px;padding:22px;opacity:0;pointer-events:none;transition:.18s;box-shadow:0 30px 80px rgba(0,0,0,.6);}
+  .import-modal.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%);}
+  .import-modal h3{margin:0 0 14px;font-family:'Space Grotesk',sans-serif;font-size:18px;}
+  .import-modal label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:6px;font-family:'IBM Plex Mono',monospace;}
+  .import-modal select{width:100%;background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:11px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
+  .import-status{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);margin-top:10px;min-height:16px;}
+  .import-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
 </style>
 </head>
 <body>
@@ -356,6 +365,11 @@ button.ghost{background:transparent;}
     <div class="ssl-field"><label for="m2SslInput">M2 SSL Sensors</label><input type="text" id="m2SslInput" autocomplete="off"></div>
   </div>
   <div class="ssl-warn" id="sslWarn" hidden></div>
+  <div class="ssl-box">
+    <div class="ssl-field"><label for="m1ParamInput">M1 Parameters</label><select id="m1ParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
+    <div class="ssl-field"><label for="m2ParamInput">M2 Parameters</label><select id="m2ParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
+    <div class="ssl-field"><label for="tcarParamInput">TCAR Parameters</label><select id="tcarParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
+  </div>
 
   <div class="summary" id="summary">
     <div class="stat"><div class="n" id="statDoors">0 / 12</div><div class="l">Doors Inspected</div></div>
@@ -371,6 +385,7 @@ button.ghost{background:transparent;}
       <span><i style="background:#3a3120;border:1px solid var(--amber)"></i>In progress</span>
       <span><i style="background:#1f3a2c;border:1px solid var(--green)"></i>Complete</span>
       <span><i style="background:#3a2321;border:1px solid var(--red)"></i>Flagged</span>
+      <span><i style="background:#1b2c3f;border:1px solid #4a90d9"></i>Replacement done</span>
     </div>
     <svg viewBox="0 0 1240 420" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -394,10 +409,10 @@ button.ghost{background:transparent;}
     <div class="log-body" id="logBody">
       <table>
         <thead>
-          <tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calibration</th><th>Replacement</th><th>Water Signs</th><th>Logged</th></tr>
+          <tr><th>Car</th><th>Door</th><th>Sensor</th><th>State</th><th>Calibration</th><th>Replacement</th><th>Repl. Done</th><th>Water Signs</th><th>Logged</th></tr>
         </thead>
         <tbody id="logTableBody">
-          <tr class="empty-row"><td colspan="8">No sensor records yet — click a door on the diagram above to begin.</td></tr>
+          <tr class="empty-row"><td colspan="9">No sensor records yet — click a door on the diagram above to begin.</td></tr>
         </tbody>
       </table>
     </div>
@@ -422,9 +437,10 @@ button.ghost{background:transparent;}
     </div>
     <p class="action-note" id="saveNote">"Save Train Data" writes a JSON file to a folder you choose on this computer. "Open Train Data" loads a previously saved file back in. "Generate Report" opens the print dialog with a clean summary of every door and sensor.</p>
     <div class="b4a-creds">
+      <button id="btnImportB4a">Import Train Data</button>
       <button id="btnB4a">Upload data</button>
     </div>
-    <div class="b4a-status" id="b4aStatus">Pushes with your signed-in session. All 48 sensors must be logged before pushing.</div>
+    <div class="b4a-status" id="b4aStatus">Import a unit to edit it, or log all 48 sensors to upload a new one. Uploads use your signed-in session.</div>
   </div>
 </div>
 
@@ -447,11 +463,24 @@ button.ghost{background:transparent;}
 
 <div id="printReport"></div>
 
+<div class="import-scrim" id="importScrim"></div>
+<div class="import-modal" id="importModal">
+  <h3>Import from Back4App</h3>
+  <label for="b4aUnitSelect">Unit ID</label>
+  <select id="b4aUnitSelect"><option value="">Loading units…</option></select>
+  <div class="import-status" id="importStatus"></div>
+  <div class="import-actions">
+    <button id="btnImportCancel">Cancel</button>
+    <button class="primary" id="btnImportLoad">Load unit</button>
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
 <script>
 /* shared Back4App auth: same app + session as the main console login */
 const B4A = { serverURL:"https://parseapi.back4app.com/", appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM", className:"DoorSensorInspection" };
 try{ Parse.initialize(B4A.appId, B4A.jsKey); Parse.serverURL = B4A.serverURL; }catch(e){}
+const b4aObjects = {};
+let importedTrainId = '';
 
 /* ---------------- data model ---------------- */
 // records keyed by "CAR-DOOR-SENSOR" -> row object, one flat record per sensor.
@@ -473,6 +502,7 @@ const WATER_OPTS = ['Not Visible','Visible'];
 let currentCar = null, currentDoor = null;
 let trainId = '';
 let m1Ssl = '', tcarSsl = '', m2Ssl = '';
+let m1Param = '', m2Param = '', tcarParam = '';
 let comments = '';
 
 const trainIdInput = document.getElementById('trainIdInput');
@@ -483,6 +513,12 @@ const m2SslInput = document.getElementById('m2SslInput');
 m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); checkSslFlags(); });
 tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); checkSslFlags(); });
 m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); checkSslFlags(); });
+const m1ParamInput = document.getElementById('m1ParamInput');
+const m2ParamInput = document.getElementById('m2ParamInput');
+const tcarParamInput = document.getElementById('tcarParamInput');
+m1ParamInput.addEventListener('change', () => { m1Param = m1ParamInput.value; });
+m2ParamInput.addEventListener('change', () => { m2Param = m2ParamInput.value; });
+tcarParamInput.addEventListener('change', () => { tcarParam = tcarParamInput.value; });
 function checkSslFlags(){
   const items = [['m1SslInput','M1'],['tcarSslInput','TCAR'],['m2SslInput','M2']];
   const low = [];
@@ -628,6 +664,10 @@ function openModal(carId, doorId){
         <select data-field="replacement">${optionsHtml(REPL_OPTS, existing.replacement)}</select>
       </div>
       <div class="field">
+        <label>Replacement completed</label>
+        <select data-field="replacementCompleted">${optionsHtml(['No','Yes'], existing.replacementCompleted || 'No')}</select>
+      </div>
+      <div class="field">
         <label>Water signs</label>
         <select data-field="water">${optionsHtml(WATER_OPTS, existing.water)}</select>
       </div>
@@ -664,6 +704,7 @@ document.getElementById('modalSave').addEventListener('click', () => {
       state: get('state'),
       calibration: get('calibration'),
       replacement: get('replacement'),
+      replacementCompleted: get('replacementCompleted'),
       water: get('water'),
       timestamp: new Date().toISOString()
     };
@@ -681,9 +722,10 @@ function updateDoorStatus(carId, doorId){
   let status = 'pending';
   if (rows.length > 0 && rows.length < 4) status = 'partial';
   if (rows.length === 4) {
-    const issue = rows.some(r => r.calibration === 'NOK' || r.replacement === 'Yes' || r.water === 'Visible');
+    const issue = rows.some(r => r.calibration === 'NOK' || (r.replacement === 'Yes' && r.replacementCompleted !== 'Yes') || r.water === 'Visible');
     status = issue ? 'issue' : 'complete';
   }
+  if (status === 'complete' && rows.some(r => r.replacementCompleted === 'Yes')) status = 'replaced';
   rect.setAttribute('class', `door status-${status}`);
 }
 
@@ -694,17 +736,18 @@ function renderLog(){
   document.getElementById('logCount').textContent = `${rows.length} record${rows.length===1?'':'s'}`;
 
   if (rows.length === 0){
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No sensor records yet — click a door on the diagram above to begin.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No sensor records yet — click a door on the diagram above to begin.</td></tr>';
     return;
   }
 
   tbody.innerHTML = rows.map(r => {
-    const flagged = r.calibration === 'NOK' || r.replacement === 'Yes' || r.water === 'Visible';
+    const flagged = r.calibration === 'NOK' || (r.replacement === 'Yes' && r.replacementCompleted !== 'Yes') || r.water === 'Visible';
     return `<tr>
       <td>${r.car}</td><td>${r.door}</td><td>${r.sensor}</td>
       <td>${r.state}</td>
       <td class="${r.calibration==='NOK'?'flag':''}">${r.calibration}</td>
       <td class="${r.replacement==='Yes'?'flag':''}">${r.replacement}</td>
+      <td>${r.replacementCompleted || 'No'}</td>
       <td class="${r.water==='Visible'?'flag':''}">${r.water}</td>
       <td>${r.timestamp.replace('T',' ').slice(0,19)}</td>
     </tr>`;
@@ -722,7 +765,7 @@ function renderSummary(){
 
   document.getElementById('statDoors').textContent = `${doorsComplete} / 12`;
   document.getElementById('statSensors').textContent = `${rows.length} / 48`;
-  document.getElementById('statReplace').textContent = rows.filter(r => r.replacement === 'Yes').length;
+  document.getElementById('statReplace').textContent = rows.filter(r => r.replacement === 'Yes' && r.replacementCompleted !== 'Yes').length;
   document.getElementById('statWater').textContent = rows.filter(r => r.water === 'Visible').length;
 }
 
@@ -740,9 +783,12 @@ function toRows(){
     m1_ssl_sensors: m1Ssl || '',
     tcar_ssl_sensors: tcarSsl || '',
     m2_ssl_sensors: m2Ssl || '',
+    m1_parameters: m1Param || '',
+    m2_parameters: m2Param || '',
+    tcar_parameters: tcarParam || '',
     car: r.car, door: r.door, sensor: r.sensor,
     state: r.state, calibration: r.calibration,
-    replacement_required: r.replacement, water_signs: r.water,
+    replacement_required: r.replacement, replacement_completed: r.replacementCompleted || 'No', water_signs: r.water,
     timestamp: r.timestamp
   }));
 }
@@ -763,6 +809,7 @@ function download(filename, content, mime){
 document.getElementById('btnReset').addEventListener('click', () => {
   if (!confirm('Clear all recorded sensor data? This cannot be undone.')) return;
   Object.keys(records).forEach(k => delete records[k]);
+  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = '';
   document.querySelectorAll('rect.door').forEach(r => r.setAttribute('class', 'door status-pending'));
   renderLog(); renderSummary();
 });
@@ -778,8 +825,9 @@ document.getElementById('btnReport').addEventListener('click', () => {
     if (!confirm(`Only ${rows.length} of ${totalExpected} sensors have been recorded. Generate the report anyway?`)) return;
   }
 
-  const flagged = rows.filter(r => r.calibration === 'NOK' || r.replacement === 'Yes' || r.water === 'Visible');
-  const replaceCount = rows.filter(r => r.replacement === 'Yes').length;
+  const flagged = rows.filter(r => r.calibration === 'NOK' || (r.replacement === 'Yes' && r.replacementCompleted !== 'Yes') || r.water === 'Visible');
+  const replaceCount = rows.filter(r => r.replacement === 'Yes' && r.replacementCompleted !== 'Yes').length;
+  const replaceCompletedCount = rows.filter(r => r.replacementCompleted === 'Yes').length;
   const waterCount = rows.filter(r => r.water === 'Visible').length;
   const now = new Date();
 
@@ -798,13 +846,20 @@ document.getElementById('btnReport').addEventListener('click', () => {
              + `<td ${bad?'class="rep-flag"':''}>${bad ? 'Below 16' : (shown === '&mdash;' ? '&mdash;' : 'OK')}</td></tr>`; }).join('')
     + `</tbody></table></div>`;
 
+  const paramData = [{label:'M1 Car', v:m1Param}, {label:'M2 Car', v:m2Param}, {label:'T CAR', v:tcarParam}];
+  const paramBlock = `<div class="rep-ssl"><h3 class="rep-ssl-title">Car Parameters</h3>`
+    + `<table><thead><tr><th>Car</th><th>Parameter</th></tr></thead><tbody>`
+    + paramData.map(d => { const bad = d.v === 'NOK'; const shown = (d.v === '' || d.v == null) ? '&mdash;' : d.v;
+        return `<tr><td>${d.label}</td><td ${bad?'class="rep-flag"':''}>${shown}</td></tr>`; }).join('')
+    + `</tbody></table></div>`;
+
   let carSections = '';
   CARS.forEach(car => {
     carSections += `<div class="rep-car-section">
       <div class="rep-car-title">${car.label}</div>
       <div class="rep-car-sub">${car.sub}</div>
       <table>
-        <thead><tr><th>Door</th><th>Sensor</th><th>State</th><th>Calibration</th><th>Replacement</th><th>Water Signs</th><th>Logged</th></tr></thead>
+        <thead><tr><th>Door</th><th>Sensor</th><th>State</th><th>Calibration</th><th>Replacement</th><th>Repl. Done</th><th>Water Signs</th><th>Logged</th></tr></thead>
         <tbody>`;
     DOORS.forEach(doorId => {
       SENSORS.forEach(sensorId => {
@@ -816,7 +871,8 @@ document.getElementById('btnReport').addEventListener('click', () => {
           carSections += `<tr>
             <td>${doorId}</td><td>${sensorId}</td><td>${r.state}</td>
             <td ${flagCell(r.calibration === 'NOK')}>${r.calibration}</td>
-            <td ${flagCell(r.replacement === 'Yes')}>${r.replacement}</td>
+            <td ${flagCell(r.replacement === 'Yes' && r.replacementCompleted !== 'Yes')}>${r.replacement}</td>
+            <td>${r.replacementCompleted || 'No'}</td>
             <td ${flagCell(r.water === 'Visible')}>${r.water}</td>
             <td>${r.timestamp.replace('T',' ').slice(0,19)}</td>
           </tr>`;
@@ -843,10 +899,13 @@ document.getElementById('btnReport').addEventListener('click', () => {
       <div><div class="num">${rows.length} / ${totalExpected}</div><div class="lbl">Sensors Recorded</div></div>
       <div><div class="num">${flagged.length}</div><div class="lbl">Sensors Flagged</div></div>
       <div><div class="num">${replaceCount}</div><div class="lbl">Replacement Required</div></div>
+      <div><div class="num">${replaceCompletedCount}</div><div class="lbl">Replacement Completed</div></div>
       <div><div class="num">${waterCount}</div><div class="lbl">Water Signs Visible</div></div>
     </div>
 
     ${sslBlock}
+
+    ${paramBlock}
 
     ${carSections}
 
@@ -857,16 +916,6 @@ document.getElementById('btnReport').addEventListener('click', () => {
         : `<p class="rep-comments-empty">No additional comments recorded.</p>`}
     </div>
 
-    <div class="rep-signoff">
-      <div>
-        <div class="sig-line">&nbsp;</div>
-        <div class="sig-label">Inspector name &amp; signature</div>
-      </div>
-      <div>
-        <div class="sig-line">&nbsp;</div>
-        <div class="sig-label">Supervisor name &amp; signature</div>
-      </div>
-    </div>
     <div class="rep-footer-note">Generated by Train Inspection Console · Train ID ${trainId || 'Not set'} · ${now.toLocaleDateString()}</div>
   `;
 
@@ -888,6 +937,9 @@ document.getElementById('btnSaveTrain').addEventListener('click', async () => {
     m1_ssl_sensors: m1Ssl,
     tcar_ssl_sensors: tcarSsl,
     m2_ssl_sensors: m2Ssl,
+    m1_parameters: m1Param,
+    m2_parameters: m2Param,
+    tcar_parameters: tcarParam,
     records: rows
   };
   const filename = `${fileBase()}.json`;
@@ -918,13 +970,14 @@ document.getElementById('btnSaveTrain').addEventListener('click', async () => {
 function applyTrainPayload(payload, sourceLabel){
   if (!payload || !Array.isArray(payload.records)){
     alert('That file doesn\'t look like a Train Data export — no "records" array found.');
-    return;
+    return false;
   }
   if (Object.keys(records).length > 0){
-    if (!confirm('Loading this file will replace all currently entered data. Continue?')) return;
+    if (!confirm('Loading this file will replace all currently entered data. Continue?')) return false;
   }
 
   Object.keys(records).forEach(k => delete records[k]);
+  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = '';
   payload.records.forEach(row => {
     const key = `${row.car}-${row.door}-${row.sensor}`;
     records[key] = {
@@ -934,6 +987,7 @@ function applyTrainPayload(payload, sourceLabel){
       state: row.state,
       calibration: row.calibration,
       replacement: row.replacement_required,
+      replacementCompleted: row.replacement_completed || 'No',
       water: row.water_signs,
       timestamp: row.timestamp
     };
@@ -948,12 +1002,15 @@ function applyTrainPayload(payload, sourceLabel){
   commentsCount.textContent = `${comments.length} / 2000`;
   m1Ssl = payload.m1_ssl_sensors || ''; tcarSsl = payload.tcar_ssl_sensors || ''; m2Ssl = payload.m2_ssl_sensors || '';
   m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
+  m1Param = payload.m1_parameters || ''; m2Param = payload.m2_parameters || ''; tcarParam = payload.tcar_parameters || '';
+  m1ParamInput.value = m1Param; m2ParamInput.value = m2Param; tcarParamInput.value = tcarParam;
   checkSslFlags();
 
   CARS.forEach(car => DOORS.forEach(doorId => updateDoorStatus(car.id, doorId)));
   renderLog();
   renderSummary();
   document.getElementById('saveNote').textContent = `Loaded ${payload.records.length} sensor record(s) from ${sourceLabel}.`;
+  return true;
 }
 
 document.getElementById('btnOpenTrain').addEventListener('click', async () => {
@@ -991,6 +1048,87 @@ document.getElementById('openTrainFileInput').addEventListener('change', (e) => 
 });
 
 /* ---------------- Back4App push (best effort) ---------------- */
+/* ---------------- import a unit from Back4App ---------------- */
+async function b4aFetchUnitIds(){
+  const ids = new Set(); let skip = 0; const page = 1000;
+  for (let i = 0; i < 30; i++){
+    const q = new Parse.Query(B4A.className); q.select('train_id'); q.limit(page); q.skip(skip);
+    const res = await q.find();
+    res.forEach(o => { const t = o.get('train_id'); if (t) ids.add(t); });
+    if (res.length < page) break; skip += page;
+  }
+  return [...ids].sort();
+}
+async function b4aLoadUnit(unitId){
+  const q = new Parse.Query(B4A.className); q.equalTo('train_id', unitId); q.limit(1000);
+  const res = await q.find();
+  let comments = '', m1 = '', tc = '', m2 = '', mp1 = '', mp2 = '', tcp = '';
+  res.forEach(o => {
+    if (!comments && o.get('comments')) comments = o.get('comments');
+    if (!m1 && o.get('m1_ssl_sensors')) m1 = o.get('m1_ssl_sensors');
+    if (!tc && o.get('tcar_ssl_sensors')) tc = o.get('tcar_ssl_sensors');
+    if (!m2 && o.get('m2_ssl_sensors')) m2 = o.get('m2_ssl_sensors');
+    if (!mp1 && o.get('m1_parameters')) mp1 = o.get('m1_parameters');
+    if (!mp2 && o.get('m2_parameters')) mp2 = o.get('m2_parameters');
+    if (!tcp && o.get('tcar_parameters')) tcp = o.get('tcar_parameters');
+  });
+  const payload = {
+    train_id: unitId, comments, m1_ssl_sensors: m1, tcar_ssl_sensors: tc, m2_ssl_sensors: m2,
+    m1_parameters: mp1, m2_parameters: mp2, tcar_parameters: tcp,
+    records: res.map(o => ({ car:o.get('car'), door:o.get('door'), sensor:o.get('sensor'),
+      state:o.get('state'), calibration:o.get('calibration'),
+      replacement_required:o.get('replacement_required'), replacement_completed:o.get('replacement_completed'), water_signs:o.get('water_signs'),
+      timestamp:o.get('timestamp') || new Date().toISOString() }))
+  };
+  const applied = applyTrainPayload(payload, 'Back4App \u00b7 ' + unitId);
+  if (!applied) return 0;
+  // keep the actual Parse objects so uploading updates them instead of duplicating
+  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]);
+  res.forEach(o => {
+    const key = `${o.get('car')}-${o.get('door')}-${o.get('sensor')}`;
+    const prev = b4aObjects[key];
+    if (!prev || (o.get('timestamp') || '') >= (prev.get('timestamp') || '')) b4aObjects[key] = o;
+  });
+  importedTrainId = unitId;
+  return res.length;
+}
+async function openImportModal(){
+  document.getElementById('importScrim').classList.add('open');
+  document.getElementById('importModal').classList.add('open');
+  const sel = document.getElementById('b4aUnitSelect');
+  const st = document.getElementById('importStatus');
+  sel.innerHTML = '<option value="">Loading units\u2026</option>'; st.textContent = '';
+  try{
+    if (typeof Parse === 'undefined') throw new Error('Parse SDK not loaded.');
+    if (!Parse.User.current()) throw new Error('Not signed in \u2014 open this from the main app after signing in.');
+    const ids = await b4aFetchUnitIds();
+    if (!ids.length){ sel.innerHTML = '<option value="">No units found</option>'; st.textContent = 'No records in Back4App yet.'; return; }
+    sel.innerHTML = '<option value="">Select a unit\u2026</option>' + ids.map(id => `<option value="${String(id).replace(/"/g,'&quot;')}">${id}</option>`).join('');
+    st.textContent = ids.length + ' unit(s) available.';
+  }catch(err){ sel.innerHTML = '<option value="">\u2014</option>'; st.textContent = "Couldn't load units: " + (err.message || err); }
+}
+function closeImportModal(){
+  document.getElementById('importScrim').classList.remove('open');
+  document.getElementById('importModal').classList.remove('open');
+}
+document.getElementById('btnImportB4a').addEventListener('click', openImportModal);
+document.getElementById('btnImportCancel').addEventListener('click', closeImportModal);
+document.getElementById('importScrim').addEventListener('click', closeImportModal);
+document.getElementById('btnImportLoad').addEventListener('click', async () => {
+  const sel = document.getElementById('b4aUnitSelect');
+  const st = document.getElementById('importStatus');
+  const unitId = sel.value;
+  if (!unitId){ st.textContent = 'Choose a unit first.'; return; }
+  st.textContent = 'Loading ' + unitId + '\u2026';
+  try{
+    const n = await b4aLoadUnit(unitId);
+    if (n > 0){
+      closeImportModal();
+      document.getElementById('b4aStatus').textContent = 'Imported ' + n + ' record(s) for ' + unitId + ' from Back4App. Edit as needed, then press Upload data to save changes.';
+    } else { st.textContent = 'Load cancelled.'; }
+  }catch(err){ st.textContent = 'Load failed: ' + (err.message || err); }
+});
+
 document.getElementById('btnB4a').addEventListener('click', async () => {
   const status = document.getElementById('b4aStatus');
   const rows = toRows();
@@ -1005,9 +1143,18 @@ document.getElementById('btnB4a').addEventListener('click', async () => {
   if (!user){ status.textContent = 'Not signed in — open this from the main app after signing in.'; return; }
   status.textContent = `Pushing ${rows.length} record(s)...`;
   try{
-    const objs = rows.map(row => { const o = new Parse.Object(B4A.className); Object.keys(row).forEach(k => o.set(k, row[k])); return o; });
+    const objs = rows.map(row => {
+      const key = `${row.car}-${row.door}-${row.sensor}`;
+      const reuse = (trainId === importedTrainId) && b4aObjects[key];
+      const o = reuse || new Parse.Object(B4A.className);
+      Object.keys(row).forEach(k => o.set(k, row[k]));
+      return o;
+    });
     await Parse.Object.saveAll(objs);
-    status.textContent = `Pushed ${objs.length} record(s) to Back4App as ${user.getUsername()}.`;
+    Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]);
+    objs.forEach(o => { b4aObjects[`${o.get('car')}-${o.get('door')}-${o.get('sensor')}`] = o; });
+    importedTrainId = trainId || 'UNSET';
+    status.textContent = `Uploaded ${objs.length} record(s) to Back4App as ${user.getUsername()}.`;
   }catch(err){
     status.textContent = 'Push failed: ' + (err && err.message ? err.message : err) + ' — the class must allow the signed-in user to create records.';
   }

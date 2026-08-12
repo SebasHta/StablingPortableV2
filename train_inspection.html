@@ -1131,12 +1131,29 @@ document.getElementById('btnImportLoad').addEventListener('click', async () => {
 
 document.getElementById('btnB4a').addEventListener('click', async () => {
   const status = document.getElementById('b4aStatus');
+  // Completed replacement => sensor is operational and calibrated
+  let __changed = 0;
+  Object.values(records).forEach(r => {
+    if (r.replacementCompleted === 'Yes' && (r.state !== 'Operational' || r.calibration !== 'OK')){
+      r.state = 'Operational'; r.calibration = 'OK'; __changed++;
+    }
+  });
+  if (__changed){ CARS.forEach(c => DOORS.forEach(d => updateDoorStatus(c.id, d))); renderLog(); renderSummary(); }
   const rows = toRows();
   if (rows.length === 0){ status.textContent = 'No records to push yet.'; return; }
   const totalExpected = CARS.length * DOORS.length * SENSORS.length;
   if (rows.length < totalExpected){
     status.textContent = `Only ${rows.length} of ${totalExpected} sensors are logged. Complete every door before pushing.`;
     return;
+  }
+  const notTested = Object.values(records).filter(r => r.state === 'Not Tested');
+  if (notTested.length){
+    const loc = notTested
+      .sort((a,b) => (a.car+a.door+a.sensor).localeCompare(b.car+b.door+b.sensor))
+      .map(r => '\u2022 ' + (((CARS.find(c => c.id === r.car)||{}).label) || r.car) + ' \u00b7 Door ' + r.door + ' \u00b7 Sensor ' + r.sensor)
+      .join('\n');
+    const proceed = confirm(notTested.length + ' sensor(s) are still "Not Tested":\n\n' + loc + '\n\nContinue with upload anyway?');
+    if (!proceed){ status.textContent = 'Upload cancelled \u2014 ' + notTested.length + ' sensor(s) still Not Tested.'; return; }
   }
   if (typeof Parse === 'undefined'){ status.textContent = 'Parse SDK not loaded.'; return; }
   const user = Parse.User.current();

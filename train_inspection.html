@@ -95,7 +95,8 @@ svg{width:100%;height:auto;display:block;}
 .door.status-partial{fill:#3a3120;stroke:var(--amber);}
 .door.status-complete{fill:#1f3a2c;stroke:var(--green);}
 .door.status-issue{fill:#3a2321;stroke:var(--red);}
-.door.status-replaced{fill:#1b2c3f;stroke:#4a90d9;}
+.door.status-replaced{fill:#271f42;stroke:#9d6ff2;}
+.door.status-water{fill:#0f3742;stroke:#29c6e6;}
 
 /* ---- data log ---- */
 .log-panel{
@@ -385,7 +386,8 @@ button.ghost{background:transparent;}
       <span><i style="background:#3a3120;border:1px solid var(--amber)"></i>In progress</span>
       <span><i style="background:#1f3a2c;border:1px solid var(--green)"></i>Complete</span>
       <span><i style="background:#3a2321;border:1px solid var(--red)"></i>Flagged</span>
-      <span><i style="background:#1b2c3f;border:1px solid #4a90d9"></i>Replacement done</span>
+      <span><i style="background:#271f42;border:1px solid #9d6ff2"></i>Replacement done</span>
+      <span><i style="background:#0f3742;border:1px solid #29c6e6"></i>Water ingress only</span>
     </div>
     <svg viewBox="0 0 1240 420" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -503,6 +505,9 @@ let currentCar = null, currentDoor = null;
 let trainId = '';
 let m1Ssl = '', tcarSsl = '', m2Ssl = '';
 let m1Param = '', m2Param = '', tcarParam = '';
+let dataDirty = false;
+function markDirty(){ dataDirty = true; }
+window.addEventListener('beforeunload', (e) => { if (dataDirty && Object.keys(records).length){ e.preventDefault(); e.returnValue = 'You have unsaved inspection data — it will be lost if you close before uploading or saving.'; return e.returnValue; } });
 let comments = '';
 
 const trainIdInput = document.getElementById('trainIdInput');
@@ -510,15 +515,15 @@ const trainIdChip = document.getElementById('trainIdChip');
 const m1SslInput = document.getElementById('m1SslInput');
 const tcarSslInput = document.getElementById('tcarSslInput');
 const m2SslInput = document.getElementById('m2SslInput');
-m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); checkSslFlags(); });
-tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); checkSslFlags(); });
-m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); checkSslFlags(); });
+m1SslInput.addEventListener('input', () => { m1Ssl = m1SslInput.value.trim(); checkSslFlags(); markDirty(); });
+tcarSslInput.addEventListener('input', () => { tcarSsl = tcarSslInput.value.trim(); checkSslFlags(); markDirty(); });
+m2SslInput.addEventListener('input', () => { m2Ssl = m2SslInput.value.trim(); checkSslFlags(); markDirty(); });
 const m1ParamInput = document.getElementById('m1ParamInput');
 const m2ParamInput = document.getElementById('m2ParamInput');
 const tcarParamInput = document.getElementById('tcarParamInput');
-m1ParamInput.addEventListener('change', () => { m1Param = m1ParamInput.value; });
-m2ParamInput.addEventListener('change', () => { m2Param = m2ParamInput.value; });
-tcarParamInput.addEventListener('change', () => { tcarParam = tcarParamInput.value; });
+m1ParamInput.addEventListener('change', () => { m1Param = m1ParamInput.value; markDirty(); });
+m2ParamInput.addEventListener('change', () => { m2Param = m2ParamInput.value; markDirty(); });
+tcarParamInput.addEventListener('change', () => { tcarParam = tcarParamInput.value; markDirty(); });
 function checkSslFlags(){
   const items = [['m1SslInput','M1'],['tcarSslInput','TCAR'],['m2SslInput','M2']];
   const low = [];
@@ -533,14 +538,14 @@ function checkSslFlags(){
   if (warn) { if (low.length) { warn.hidden = false; warn.textContent = 'SSL count below 16 on: ' + low.join(', '); } else { warn.hidden = true; warn.textContent = ''; } }
 }
 trainIdInput.addEventListener('input', () => {
-  trainId = trainIdInput.value.trim();
+  trainId = trainIdInput.value.trim(); markDirty();
   trainIdChip.textContent = trainId ? trainId : 'Not set';
 });
 
 const commentsInput = document.getElementById('commentsInput');
 const commentsCount = document.getElementById('commentsCount');
 commentsInput.addEventListener('input', () => {
-  comments = commentsInput.value;
+  comments = commentsInput.value; markDirty();
   commentsCount.textContent = `${comments.length} / 2000`;
 });
 
@@ -712,6 +717,7 @@ document.getElementById('modalSave').addEventListener('click', () => {
   updateDoorStatus(currentCar, currentDoor);
   renderLog();
   renderSummary();
+  markDirty();
   closeModal();
 });
 
@@ -722,10 +728,14 @@ function updateDoorStatus(carId, doorId){
   let status = 'pending';
   if (rows.length > 0 && rows.length < 4) status = 'partial';
   if (rows.length === 4) {
-    const issue = rows.some(r => r.calibration === 'NOK' || (r.replacement === 'Yes' && r.replacementCompleted !== 'Yes') || r.water === 'Visible');
-    status = issue ? 'issue' : 'complete';
+    const fault = rows.some(r => r.calibration === 'NOK' || (r.replacement === 'Yes' && r.replacementCompleted !== 'Yes'));
+    const water = rows.some(r => r.water === 'Visible');
+    const replaced = rows.some(r => r.replacementCompleted === 'Yes');
+    if (fault) status = 'issue';
+    else if (water) status = 'water';
+    else if (replaced) status = 'replaced';
+    else status = 'complete';
   }
-  if (status === 'complete' && rows.some(r => r.replacementCompleted === 'Yes')) status = 'replaced';
   rect.setAttribute('class', `door status-${status}`);
 }
 
@@ -809,7 +819,7 @@ function download(filename, content, mime){
 document.getElementById('btnReset').addEventListener('click', () => {
   if (!confirm('Clear all recorded sensor data? This cannot be undone.')) return;
   Object.keys(records).forEach(k => delete records[k]);
-  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = '';
+  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = ''; dataDirty = false;
   document.querySelectorAll('rect.door').forEach(r => r.setAttribute('class', 'door status-pending'));
   renderLog(); renderSummary();
 });
@@ -963,6 +973,7 @@ document.getElementById('btnSaveTrain').addEventListener('click', async () => {
     }
   }
   download(filename, content, 'application/json');
+  dataDirty = false;
   note.textContent = `Downloaded "${filename}" to your browser's downloads folder (your browser doesn't support choosing a folder directly — move the file where you'd like).`;
 });
 
@@ -977,7 +988,7 @@ function applyTrainPayload(payload, sourceLabel){
   }
 
   Object.keys(records).forEach(k => delete records[k]);
-  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = '';
+  Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = ''; dataDirty = false;
   payload.records.forEach(row => {
     const key = `${row.car}-${row.door}-${row.sensor}`;
     records[key] = {
@@ -1172,6 +1183,7 @@ document.getElementById('btnB4a').addEventListener('click', async () => {
     objs.forEach(o => { b4aObjects[`${o.get('car')}-${o.get('door')}-${o.get('sensor')}`] = o; });
     importedTrainId = trainId || 'UNSET';
     status.textContent = `Uploaded ${objs.length} record(s) to Back4App as ${user.getUsername()}.`;
+    dataDirty = false;
   }catch(err){
     status.textContent = 'Push failed: ' + (err && err.message ? err.message : err) + ' — the class must allow the signed-in user to create records.';
   }

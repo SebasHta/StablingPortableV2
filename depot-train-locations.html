@@ -282,7 +282,7 @@
   .subbar .subhome{font-size:17px;line-height:1}
   #soundBtn.muted{color:var(--ink-faint)}
   .apc-view{display:flex;flex-direction:column}
-  #apcFrame{flex:1;width:100%;border:0;background:var(--bg)}
+  #apcFrame,#fleetstatusFrame{flex:1;width:100%;border:0;background:var(--bg)}
   /* reports module */
   .reports-view{display:flex;flex-direction:column}
   .reports-body{flex:1;min-height:0;overflow:auto;padding:24px 22px 60px}
@@ -294,6 +294,17 @@
   #errSearch:focus{border-color:var(--rail-lit)}
   #errCount{font-family:var(--mono);font-size:12px;color:var(--ink-dim)}
   .err-actions{white-space:nowrap;display:flex;gap:6px}
+  #faultContent .rep-tablewrap{max-width:none}
+  #faultContent .rep-table td{white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis;padding:13px 14px}
+  #faultContent .rep-table td.msg-full{white-space:normal;max-width:560px;overflow:visible;text-overflow:clip;line-height:1.5}
+  #faultContent .rep-table tbody tr:nth-child(even){background:rgba(57,197,214,.05)}
+  #faultContent .rep-table tbody tr:hover{background:rgba(57,197,214,.14)}
+  .ft-list{display:grid;grid-template-columns:repeat(3,1fr);gap:5px 12px;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:300px;overflow:auto}
+  .ft-item{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);cursor:pointer}
+  .ft-item input{accent-color:var(--red)}
+  .ft-exc-head{margin-top:18px}
+  .ft-exc-tools{display:flex;gap:8px;align-items:center;margin-top:6px}
+  .ft-exc-tools input{flex:1;background:#0c131a;border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:var(--mono);font-size:12px;padding:7px 10px;outline:none}
   #errorlogContent{max-width:none}
   #errorlogContent .rep-tablewrap{max-width:none}
   #errorlogContent .rep-table td{white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
@@ -333,6 +344,18 @@
   .rep-pass.no{color:var(--red);border-color:var(--red)}
   .rep-pass.prog{color:var(--amber);border-color:var(--amber)}
   .rep-summary-head{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;color:var(--ink-faint);margin:4px 0 10px}
+  .stop-form{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;background:linear-gradient(180deg,var(--panel),#10171e);border:1px solid var(--line);border-radius:12px;padding:16px 18px;max-width:820px}
+  .stop-form .field{display:flex;flex-direction:column;gap:6px}
+  .stop-form label{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--ink-dim)}
+  .stop-form select,.stop-form input:not([type="checkbox"]){background:#0c131a;border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:var(--mono);font-size:14px;padding:10px 12px;outline:none;min-width:220px}
+  .stop-form select:focus,.stop-form input:not([type="checkbox"]):focus{border-color:var(--rail-lit)}
+  .stop-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .tile.locked{filter:grayscale(.55)}
+  .perm-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px 18px;max-width:900px}
+  .perm-item{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);cursor:pointer}
+  .perm-item input{width:16px;height:16px;min-width:0;flex:0 0 auto;margin:0}
+  .perm-item input{accent-color:var(--green)}
+  #adminContent .rep-table td:not(:first-child){text-align:center}
   .rep-prog-tag{font-family:var(--mono);font-size:10px;color:var(--amber);border:1px solid var(--amber);border-radius:999px;padding:1px 7px;margin-left:8px}
   .rep-table tr.rep-total td{font-weight:700;border-top:2px solid var(--line);color:var(--ink)}
   .rep-chip{font-family:var(--mono);font-size:13px;color:var(--ink-dim);background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:6px 14px}
@@ -386,6 +409,8 @@
     <button data-view="apc">APC</button>
     <button data-view="reports">Reports</button>
     <button data-view="errorlog">Error Log</button>
+    <button data-view="fleetstatus">Fleet Status</button>
+    <button data-view="stoplist">Stop List</button>
   </nav>
   <div class="spacer"></div>
   <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
@@ -496,6 +521,60 @@
   <div class="reports-body"><div id="errStatus"></div><div id="errorlogContent"></div></div>
 </section>
 
+<!-- STOP LIST module -->
+<section class="view reports-view" id="stoplistView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="stopHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Stop List</span>
+    <span class="sub">Hold units from service</span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="stopRefresh" title="Refresh">⟳</button>
+  </div>
+  <div class="reports-body">
+    <div class="stop-form">
+      <div class="field"><label for="stopUnit">Unit</label><select id="stopUnit"></select></div>
+      <div class="field"><label for="stopReason">Reason</label><input id="stopReason" type="text" placeholder="Reason…" autocomplete="off"></div>
+      <div class="stop-actions"><button class="btn primary" id="stopAdd">Add to Stop List</button><button class="btn" id="stopRemove">Remove from Stop List</button></div>
+    </div>
+    <div id="stopStatus" style="margin:12px 0"></div>
+    <div id="stopContent"></div>
+  </div>
+</section>
+
+<!-- ADMIN module -->
+<section class="view reports-view" id="adminView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="adminHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Admin</span>
+    <span class="sub">Users &amp; permissions</span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="adminRefresh" title="Refresh">⟳</button>
+  </div>
+  <div class="reports-body">
+    <div class="stop-form" style="max-width:none">
+      <div class="field"><label for="adminUser">Username</label><input id="adminUser" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <div class="field"><label for="adminPass">Password</label><input id="adminPass" type="password" autocomplete="new-password"></div>
+      <div class="field" style="min-width:100%"><label>Permissions</label><div id="adminCreatePerms" class="perm-grid"></div></div>
+      <div class="stop-actions"><button class="btn primary" id="adminCreate">Create user</button></div>
+    </div>
+    <div id="adminStatus" style="margin:12px 0"></div>
+    <div id="adminContent"></div>
+  </div>
+</section>
+
+<!-- FLEET STATUS module -->
+<section class="view apc-view" id="fleetstatusView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="fleetstatusHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Fleet Status</span>
+    <span class="sub">Annunciator panel</span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="fleetstatusReload" title="Reload">⟳</button>
+    <a class="btn icon" id="fleetstatusOpen" href="./fleet-status-panel/index.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
+  </div>
+  <iframe id="fleetstatusFrame" title="AOR Fleet Status Panel"></iframe>
+</section>
+
 <div class="scrim" id="errEditScrim"></div>
 <div class="modal" id="errEditModal">
   <div class="modal-head">
@@ -585,7 +664,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "2.1";
+const APP_VERSION = "4.3";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -775,23 +854,30 @@ function slotEl(train,berthLabel,extraClass){
 /* ---------- app shell / navigation ---------- */
 let currentView="home";
 const MODULES=[
-  {view:"stabling",live:true,name:"Stabling",desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
-  {view:"apc",live:true,name:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
-  {view:"errorlog",live:true,name:"APC Error Log",desc:"Every inspection issue across the fleet.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>'},
-  {view:null,live:false,name:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
-  {view:null,live:false,name:"Fleet",desc:"Unit register & availability.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="12" rx="3"/><path d="M6 11h12"/><path d="M9 20l1.5-3M15 20l-1.5-3"/></svg>'},
-  {view:"reports",live:true,name:"Reports",desc:"Fleet analytics & inspection reports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
+  {view:"stabling",live:true,name:"Stabling",perm:"Stabling",desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
+  {view:"apc",live:true,name:"APC",perm:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
+  {view:"errorlog",live:true,name:"APC Error Log",perm:"APC_Er",desc:"Every inspection issue across the fleet.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>'},
+  {view:"fleetstatus",live:true,name:"Fleet Status",desc:"Fleet annunciator status panel.",perm:"Fleet_Status",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>'},
+  {view:"admin",live:true,name:"Admin",desc:"Create & manage users and permissions.",perm:"Admin",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.3 12l1.8 1.8 3.4-3.6"/></svg>'},
+  {view:"stoplist",live:true,name:"Stop List",perm:"Stop_List",desc:"Hold units from service.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/><path d="M9 9l6 6M15 9l-6 6"/></svg>'},
+  {view:null,live:false,name:"Audits",perm:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
+  {view:"reports",live:true,name:"Reports",perm:"Reports",desc:"Fleet analytics & inspection reports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
 ];
+function userCan(m){ const u=(typeof Parse!=='undefined')?Parse.User.current():null; if(!u) return false; if(u.get('Admin')===true) return true; return (m && m.perm) ? (u.get(m.perm)===true) : true; }
 function renderModules(){
   const el=$("modules"); if(!el) return; el.innerHTML="";
   MODULES.forEach(m=>{
+    const allowed=userCan(m), active=m.live && allowed;
     const b=document.createElement("button");
-    b.className="tile"; if(!m.live) b.disabled=true;
-    b.setAttribute("aria-label", m.name+(m.live?"":" — coming soon"));
-    b.innerHTML='<span class="ic">'+m.icon+'</span><h3>'+m.name+'</h3><p>'+m.desc+'</p><span class="badge'+(m.live?' live':'')+'">'+(m.live?"Live":"Soon")+'</span>';
-    if(m.live && m.view) b.onclick=()=>showView(m.view);
+    b.className="tile"+(active?"":" locked");
+    if(!active) b.disabled=true;
+    b.setAttribute("aria-label", m.name+(!m.live?" — coming soon":(allowed?"":" — no access")));
+    const badge=!m.live?"Soon":(allowed?"Live":"Locked");
+    b.innerHTML='<span class="ic">'+m.icon+'</span><h3>'+m.name+'</h3><p>'+m.desc+'</p><span class="badge'+(active?' live':'')+'">'+badge+'</span>';
+    if(active && m.view) b.onclick=()=>showView(m.view);
     el.appendChild(b);
   });
+  MODULES.forEach(m=>{ if(m.view){ const nb=document.querySelector('#mainnav [data-view="'+m.view+'"]'); if(nb) nb.style.display = userCan(m) ? '' : 'none'; } });
 }
 function renderHomeKPIs(){
   const el=$("homeKpis"); if(!el) return;
@@ -802,15 +888,19 @@ function renderHomeKPIs(){
   el.innerHTML=kpi(rows.length,"units tracked")+kpi(YARDS.length,"yards")+kpi(faults,"faults / holds",faults>0)+kpi(depart,"due to depart");
 }
 function showView(name){
+  const _mod=MODULES.find(m=>m.view===name); if(_mod && !userCan(_mod)) name="home";
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   const el = $(name+"View") || $("homeView");
   if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./train_inspection.html"); }
+  if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./fleet-status-panel/index.html"); }
   if(el) el.style.display="";
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
   if(name==="home") renderHomeKPIs();
   if(name==="reports") openReports();
   if(name==="errorlog") openErrorLog();
+  if(name==="stoplist") openStopList();
+  if(name==="admin") openAdmin();
 }
 
 /* ---------- alarms / audio ---------- */
@@ -1031,6 +1121,107 @@ function downloadTable(fmt){
   }catch(err){ errSetStatus('bad','Download failed: '+(err.message||err)); }
 }
 
+/* ---------- Stop List ---------- */
+const TU_LIST=["AM103","AM116","AM129","AM131","AM144","AM157","AM172","AM185","AM198","AM212","AM225","AM238","AM240","AM253","AM266","AM279","AM281","AM294","AM306","AM319","AM321","AM334","AM347","AM362","AM375","AM388","AM390","AM402","AM415","AM428","AM430","AM443","AM456","AM469","AM471","AM484","AM497","AM509","AM511","AM524","AM537","AM552","AM565","AM578","AM580","AM593","AM605","AM618","AM620","AM633","AM646","AM659","AM661","AM674","AM687","AM701","AM714","AM810","AM823","AM836","AM849","AM851","AM864","AM877","AM892","AM904","AM917","AM932","AM945","AM958","AM960","AM973","AM1005","AM1018","AM1020","AM1033","AM1046","AM1059","AM1061","AM1074","AM1087","AM1101","AM1114","AM1127","AM1142","AM1155","AM1168","AM1170","AM1183","AM1196","AM1208","AM1210","AM1223","AM1236","AM1249"];
+let stopListLoaded=false;
+function openStopList(){
+  const sel=$("stopUnit");
+  if(sel && !sel.options.length){ sel.innerHTML='<option value="">Select a unit\u2026</option>'+TU_LIST.map(t=>'<option value="'+escapeHtml(t)+'">'+escapeHtml(t)+'</option>').join(''); }
+  if(!stopListLoaded) loadStopList();
+}
+function stopSetStatus(kind,msg){ const el=$("stopStatus"); if(el) el.innerHTML=msg?'<div class="msg '+kind+'" style="display:inline-block;margin:0">'+escapeHtml(msg)+'</div>':''; }
+async function stopUpsert(stop){
+  const unit=(($("stopUnit")&&$("stopUnit").value)||'').trim();
+  const reason=(($("stopReason")&&$("stopReason").value)||'').trim();
+  if(!unit){ stopSetStatus('bad','Select a unit first.'); return; }
+  if(typeof Parse==='undefined'){ stopSetStatus('bad','Parse SDK not loaded.'); return; }
+  if(!CONFIG.appId||!CONFIG.jsKey){ stopSetStatus('bad','Add your App ID and JavaScript Key in \u2699 first.'); return; }
+  if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+  if(!Parse.User.current()){ stopSetStatus('bad','Not signed in.'); return; }
+  stopSetStatus('info',(stop?'Adding ':'Removing ')+unit+'\u2026');
+  try{
+    const q=new Parse.Query("TU_Status"); q.equalTo("TU", unit);
+    let o=await q.first();
+    if(!o){ o=new Parse.Object("TU_Status"); o.set("TU", unit); }
+    o.set("STOP", stop); o.set("REASON", reason);
+    await o.save();
+    stopSetStatus('ok', unit+(stop?' added to':' removed from')+' the stop list.');
+    if($("stopReason")) $("stopReason").value='';
+    loadStopList();
+  }catch(err){ stopSetStatus('bad','Failed: '+(err.message||err)+' \u2014 the TU_Status class must allow the signed-in user to find / create / update.'); }
+}
+async function loadStopList(){
+  const el=$("stopContent"); if(el) el.innerHTML='<div class="rep-empty">Loading stop list\u2026</div>';
+  try{
+    if(typeof Parse==='undefined') throw new Error('Parse SDK not loaded.');
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    const q=new Parse.Query("TU_Status"); q.equalTo("STOP", true); q.ascending("TU"); q.limit(1000);
+    const res=await q.find(); stopListLoaded=true;
+    if(!res.length){ if(el) el.innerHTML='<div class="rep-empty">No units currently on the stop list.</div>'; return; }
+    const trs=res.map(o=>'<tr><td>'+escapeHtml((o.get("TU")||'').toString())+'</td><td>'+escapeHtml((o.get("REASON")||'').toString())+'</td></tr>').join('');
+    if(el) el.innerHTML='<div class="rep-summary-head">On stop list \u00b7 '+res.length+' unit(s)</div>'+
+      '<div class="rep-tablewrap" style="max-width:640px"><table class="rep-table"><thead><tr><th>Unit</th><th>Reason</th></tr></thead><tbody>'+trs+'</tbody></table></div>';
+  }catch(err){ if($("stopContent")) $("stopContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load TU_Status: '+escapeHtml((err.message||err))+'</div>'; }
+}
+/* ---------- Admin: user management ---------- */
+const PERMS=[["Stabling","Stabling"],["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Admin","Admin"]];
+let adminLoaded=false, adminUsers=[];
+function openAdmin(){
+  const pc=$("adminCreatePerms");
+  if(pc && !pc.innerHTML){ pc.innerHTML=PERMS.map(pr=>'<label class="perm-item"><input type="checkbox" data-newperm="'+pr[0]+'"> '+escapeHtml(pr[1])+'</label>').join(''); }
+  if(!adminLoaded) loadUsers();
+}
+function adminSetStatus(kind,msg){ const el=$("adminStatus"); if(el) el.innerHTML=msg?'<div class="msg '+kind+'" style="display:inline-block;margin:0">'+escapeHtml(msg)+'</div>':''; }
+async function adminCreateUser(){
+  const username=(($("adminUser")&&$("adminUser").value)||'').trim();
+  const password=(($("adminPass")&&$("adminPass").value)||'');
+  if(!username||!password){ adminSetStatus('bad','Enter a username and password.'); return; }
+  if(!CONFIG.appId||!CONFIG.jsKey){ adminSetStatus('bad','Add your App ID and JavaScript Key in \u2699 first.'); return; }
+  const body={username:username, password:password, ACL:{"*":{"read":true,"write":true}}};
+  $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>{ body[cb.getAttribute('data-newperm')]=cb.checked; });
+  adminSetStatus('info','Creating '+username+'\u2026');
+  try{
+    const res=await fetch(CONFIG.serverURL+"users",{method:"POST",headers:{"X-Parse-Application-Id":CONFIG.appId,"X-Parse-Javascript-Key":CONFIG.jsKey,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok) throw new Error((data&&data.error)||("HTTP "+res.status));
+    adminSetStatus('ok','User \u201c'+username+'\u201d created.');
+    $("adminUser").value=''; $("adminPass").value='';
+    $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>cb.checked=false);
+    loadUsers();
+  }catch(err){ adminSetStatus('bad','Create failed: '+((err&&err.message)||err)); }
+}
+async function loadUsers(){
+  const el=$("adminContent"); if(el) el.innerHTML='<div class="rep-empty">Loading users\u2026</div>';
+  try{
+    if(typeof Parse==='undefined') throw new Error('Parse SDK not loaded.');
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    const q=new Parse.Query(Parse.User); q.ascending("username"); q.limit(1000);
+    const res=await q.find(); adminLoaded=true; adminUsers=res;
+    if(!res.length){ if(el) el.innerHTML='<div class="rep-empty">No users returned (check that _User \u201cFind\u201d is permitted).</div>'; return; }
+    const head='<tr><th>Username</th>'+PERMS.map(pr=>'<th>'+escapeHtml(pr[1])+'</th>').join('')+'<th>Actions</th></tr>';
+    const body=res.map((o,i)=>'<tr><td>'+escapeHtml((o.get("username")||'').toString())+'</td>'+
+      PERMS.map(pr=>'<td><input type="checkbox" data-u="'+i+'" data-f="'+pr[0]+'"'+(o.get(pr[0])===true?' checked':'')+'></td>').join('')+
+      '<td class="err-actions"><button class="btn tiny" data-save="'+i+'">Save</button><button class="btn tiny danger" data-del="'+i+'">Delete</button></td></tr>').join('');
+    if(el) el.innerHTML='<div class="rep-summary-head">Users \u00b7 '+res.length+'</div><div class="rep-tablewrap"><table class="rep-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
+    el.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>adminSaveUser(+b.getAttribute('data-save')));
+    el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>adminDeleteUser(+b.getAttribute('data-del')));
+  }catch(err){ if($("adminContent")) $("adminContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load users: '+escapeHtml(((err&&err.message)||err))+'</div>'; }
+}
+async function adminSaveUser(i){
+  const o=adminUsers[i]; if(!o) return;
+  $("adminContent").querySelectorAll('input[data-u="'+i+'"]').forEach(cb=>o.set(cb.getAttribute('data-f'), cb.checked));
+  adminSetStatus('info','Saving '+o.get("username")+'\u2026');
+  try{ await o.save(); adminSetStatus('ok','Saved permissions for '+o.get("username")+'.'); }
+  catch(err){ adminSetStatus('bad','Save failed: '+((err&&err.message)||err)+' \u2014 editing other users needs _User write permission.'); }
+}
+async function adminDeleteUser(i){
+  const o=adminUsers[i]; if(!o) return;
+  const cur=Parse.User.current();
+  if(cur && o.id===cur.id){ adminSetStatus('bad','You cannot delete your own account.'); return; }
+  if(!confirm('Delete user \u201c'+o.get("username")+'\u201d? This cannot be undone.')) return;
+  try{ await o.destroy(); adminUsers.splice(i,1); loadUsers(); adminSetStatus('ok','User deleted.'); }
+  catch(err){ adminSetStatus('bad','Delete failed: '+((err&&err.message)||err)+' \u2014 deleting users needs _User delete permission.'); }
+}
 function openReports(){
   renderReportSubtabs();
   if(!reportsData && !reportsLoading) loadReports();
@@ -1627,9 +1818,18 @@ document.querySelectorAll("#mainnav [data-view]").forEach(b=>b.onclick=()=>showV
 $("brandHome").onclick=()=>showView("home");
 $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
+$("fleetstatusHome").onclick=()=>showView("home");
+$("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src","./fleet-status-panel/index.html"); };
 $("reportsHome").onclick=()=>showView("home");
 $("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
 $("errorlogHome").onclick=()=>showView("home");
+$("stopHome").onclick=()=>showView("home");
+$("adminHome").onclick=()=>showView("home");
+$("adminRefresh").onclick=loadUsers;
+$("adminCreate").onclick=adminCreateUser;
+$("stopRefresh").onclick=loadStopList;
+$("stopAdd").onclick=()=>stopUpsert(true);
+$("stopRemove").onclick=()=>stopUpsert(false);
 $("errUploadBtn").onclick=()=>$("errFile").click();
 $("errFile").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; handleErrFile(f); e.target.value=""; });
 $("errSaveBtn").onclick=saveErrToB4a;

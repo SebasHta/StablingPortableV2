@@ -332,7 +332,9 @@ fewer records, not an error).
 `atenea_dashboard.html` already needs to *write* there, so if that
 dashboard's sync is working, reads should already be allowed too).
 Acknowledging a fault also needs `update` allowed on `Live_Alarms` — see
-"Acknowledging faults" below for why.
+"Acknowledging faults" below for why. **Reset Alarms** needs `delete`
+allowed on `Live_Alarms` too, since it removes each alarm's record outright
+rather than just updating it — see "Daily reset" below.
 
 **Note for the hosted preview link:** the published Artifact version of
 this panel can't reach `parseapi.back4app.com` — published Artifacts run
@@ -514,23 +516,31 @@ in order:
    anything is changed, so it's a complete audit record of exactly what
    existed at the moment of the reset. Columns: TU, unit status, that
    alarm's own severity, alarm code, alarm message, **AteneaTimestamp**,
-   whether it was already acknowledged, and its Back4App object ID.
-2. **Sets `acknowledged: true`** on every one of those alarms in
-   `Live_Alarms` — the same PUT **Acknowledge fault** uses by hand (see
-   "Acknowledging faults" above), just run across every matching record
-   instead of one — **except** alarms belonging to a unit that's currently
-   **Out of Service**, which are left completely untouched (not written,
-   not even acknowledged if they already weren't). A unit manually flagged
-   **Review required** (see "Manual status overrides" above) has that
-   override cleared too, for the same "back to healthy" effect — **and**,
-   separately, any real `Live_Alarms` record still underneath it is
-   acknowledged just like any other unit's. Those are two independent
-   things this button does for that unit, not one-or-the-other: a unit can
-   be manually flagged *and* have a live fault at the same time (the manual
-   flag doesn't replace the underlying alarm, it just overlays it — see
-   "Manual status overrides"), so clearing the flag without also
-   acknowledging the alarm underneath would leave that alarm sitting there
-   unacknowledged with nothing left visibly pointing at it.
+   whether it was already acknowledged, and its Back4App object ID. This
+   CSV is now the **only** surviving record of what's deleted in step 2 —
+   see below.
+2. **Permanently deletes** every one of those alarms' records from
+   `Live_Alarms` — a Back4App `DELETE` on each matching `Live_Alarms/
+   <objectId>`, not a PUT — **except** alarms belonging to a unit that's
+   currently **Out of Service**, which are left completely untouched (not
+   read, not deleted). A unit manually flagged **Review required** (see
+   "Manual status overrides" above) has that override cleared too, for the
+   same "back to healthy" effect — **and**, separately, any real
+   `Live_Alarms` record still underneath it is deleted just like any other
+   unit's. Those are two independent things this button does for that
+   unit, not one-or-the-other: a unit can be manually flagged *and* have a
+   live fault at the same time (the manual flag doesn't replace the
+   underlying alarm, it just overlays it — see "Manual status overrides"),
+   so clearing the flag without also deleting the alarm underneath would
+   leave that alarm sitting there with nothing left visibly pointing at it.
+
+This is a deliberate change from how this button used to work: it no
+longer just marks alarms `acknowledged: true` (a reversible flag on a
+record that's still there) — it removes the record from `Live_Alarms`
+entirely. The single-alarm **Acknowledge fault** / **Un-acknowledge**
+button (see "Acknowledging faults" above) is unchanged and still uses the
+non-destructive PUT — this deletion behavior is specific to the **Reset
+Alarms** button.
 
 Out of Service is still the one standing exception, exactly as originally
 specified for this feature — whatever set a unit Out of Service (a live
@@ -539,29 +549,40 @@ left alone by this button.
 
 **Pacing and retries.** Writes go to Back4App one at a time, in sequence,
 with a short pause between each (`DAILY_RESET_WRITE_DELAY_MS`, 150ms) —
-firing dozens of PUT requests back-to-back with no gap at all is enough to
-trip Back4App's per-second burst limit on a fleet with a lot of active
+firing dozens of DELETE requests back-to-back with no gap at all is enough
+to trip Back4App's per-second burst limit on a fleet with a lot of active
 alarms, and a request that gets rate-limited (or hits any other transient
-error) needs a moment before it's worth trying again. Each acknowledgment
-that fails is retried once, after a 500ms backoff, before being counted as
-a real failure — so a momentary blip doesn't silently leave that one alarm
-unacknowledged. Because of the pacing, a large fleet with many active
-alarms can take several seconds to a low number of tens of seconds to fully
-run; the button stays disabled-against-double-click for the whole run (a
-second click while one is still in flight is ignored, not queued), and
-there's no need to wait and watch it — the confirmation dialog already
-warns that the run can't be undone from here, and the CSV downloads
-immediately so the "before" state is captured regardless of how the writes
-that follow it go.
+error) needs a moment before it's worth trying again. Each deletion that
+fails is retried once, after a 500ms backoff, before being counted as a
+real failure — so a momentary blip doesn't silently leave that one alarm
+undeleted. Because of the pacing, a large fleet with many active alarms can
+take several seconds to a low number of tens of seconds to fully run; the
+button stays disabled-against-double-click for the whole run (a second
+click while one is still in flight is ignored, not queued), and there's no
+need to wait and watch it — the confirmation dialog already warns that the
+run is not reversible, and the CSV downloads immediately so the "before"
+state is captured regardless of how the deletes that follow it go.
 
-**If something still couldn't be acknowledged** even after its retry, an
-alert names which unit(s) and alarm(s) failed once the run finishes — this
-used to fail silently (visible only as a `console.warn` in the browser
-console), which is exactly the kind of failure that's easy to miss until
-someone notices a fault that should have been cleared still showing up the
-next day. Running Reset Alarms again is always safe in that situation:
-already-acknowledged alarms are just re-confirmed (the same `acknowledged:
-true` written again), not double-processed.
+**If something still couldn't be deleted** even after its retry, an alert
+names which unit(s) and alarm(s) failed once the run finishes — this used
+to fail silently (visible only as a `console.warn` in the browser console),
+which is exactly the kind of failure that's easy to miss until someone
+notices a fault that should have been cleared still showing up the next
+day. In this case the alarm's record is still safely sitting in
+`Live_Alarms` — nothing is lost when a delete fails, only when it
+succeeds — and running Reset Alarms again is always safe: it just tries to
+delete those same still-present alarms again. The most likely cause of a
+persistent (non-transient) failure here is the JavaScript Key missing
+`delete` Class-Level Permission on `Live_Alarms` — see "One-time setup on
+Back4App" below.
+
+**One-time setup on Back4App:** in addition to `find` (for reading, see
+"Permissions" above) and `update` (still needed for the single-alarm
+**Acknowledge fault** button), the JavaScript Key now also needs `delete`
+allowed on `Live_Alarms` in its Class-Level Permissions for **Reset
+Alarms** to be able to remove records. Without it, every Reset Alarms run
+will download its CSV successfully but then fail every deletion with a
+permissions error, surfaced in the failure alert described above.
 
 ## Connecting to PostgreSQL
 

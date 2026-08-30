@@ -533,6 +533,10 @@
       <div class="field"><label for="stopReason">Reason</label><input id="stopReason" type="text" placeholder="Reason…" autocomplete="off"></div>
       <div class="stop-actions"><button class="btn primary" id="stopAdd">Add to Stop List</button><button class="btn" id="stopRemove">Remove from Stop List</button></div>
     </div>
+    <div class="stop-actions" style="margin-top:14px">
+      <label class="btn" style="cursor:pointer">Upload availability report<input type="file" id="stopFile" accept=".pdf,.xlsx,.xls,.csv" style="display:none"></label>
+    </div>
+    <div id="stopUpload" style="margin:12px 0"></div>
     <div id="stopStatus" style="margin:12px 0"></div>
     <div id="stopContent"></div>
   </div>
@@ -661,7 +665,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "4.7";
+const APP_VERSION = "4.8";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -1225,6 +1229,117 @@ async function adminDeleteUser(i){
   if(!confirm('Delete user \u201c'+u.username+'\u201d? This cannot be undone.')) return;
   try{ await Parse.Cloud.run("deleteUser", {objectId:u.objectId}); adminUsers.splice(i,1); loadUsers(); adminSetStatus('ok','User deleted.'); }
   catch(err){ adminSetStatus('bad','Delete failed: '+adminErrMsg(err)); }
+}
+/* ---------- Stop List: import from AOR availability report ---------- */
+let stopPendingPairs=null;
+function stopNumToTU(v){ const m=String(v==null?'':v).match(/\d+/); return m?('AM'+m[0]):''; }
+function dedupPairs(pairs){ const idx={},out=[]; pairs.forEach(p=>{ if(!p.tu) return; const k=p.tu.toUpperCase(); if(idx[k]!=null){ out[idx[k]]=p; } else { idx[k]=out.length; out.push(p); } }); return out; }
+function loadPdfJs(){
+  return new Promise((resolve,reject)=>{
+    if(window.pdfjsLib){ resolve(window.pdfjsLib); return; }
+    const sc=document.createElement('script');
+    sc.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload=()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }catch(e){} resolve(window.pdfjsLib); };
+    sc.onerror=()=>reject(new Error('Could not load the PDF reader.'));
+    document.head.appendChild(sc);
+  });
+}
+async function parsePdfStopList(buf){
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let items=[];
+  for(let pg=1;pg<=pdf.numPages;pg++){
+    const page=await pdf.getPage(pg); const tc=await page.getTextContent();
+    tc.items.forEach(it=>{ const str=(it.str||'').trim(); if(!str) return; items.push({str, x:it.transform[4], gy:(pg*100000)-it.transform[5]}); });
+  }
+  const sl=items.find(i=>/stop\s*list/i.test(i.str));
+  if(!sl) throw new Error('No "Stop List" table found in the PDF.');
+  const endM=items.find(i=> i.gy>sl.gy && /(coupling restriction|vandalism list|total fleet)/i.test(i.str));
+  const endGy=endM?endM.gy:Infinity;
+  const region=items.filter(i=> i.gy>sl.gy && i.gy<endGy);
+  const dateRe=/^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
+  const dateXs=region.filter(i=>dateRe.test(i.str)).map(i=>i.x).sort((a,b)=>a-b);
+  if(dateXs.length<2) throw new Error('Could not read the Stop List columns from the PDF.');
+  let gAt=1,gSz=-1; for(let k=1;k<dateXs.length;k++){ if(dateXs[k]-dateXs[k-1]>gSz){gSz=dateXs[k]-dateXs[k-1];gAt=k;} }
+  const col2max=dateXs[gAt-1], col5min=dateXs[gAt];
+  const mid=region.filter(i=> !dateRe.test(i.str) && i.x>(col2max-2) && i.x<(col5min-2));
+  const midXs=[...new Set(mid.map(i=>Math.round(i.x)))].sort((a,b)=>a-b);
+  let b2=1,b2g=-1; for(let k=1;k<midXs.length;k++){ if(midXs[k]-midXs[k-1]>b2g){b2g=midXs[k]-midXs[k-1];b2=k;} }
+  const l2b = midXs.length>1 ? (midXs[b2-1]+midXs[b2])/2 : (col2max+col5min)/2;
+  region.sort((a,b)=> a.gy-b.gy || a.x-b.x);
+  const firstDateX=dateXs[0];
+  const rows=[]; let cur=null;
+  region.forEach(i=>{
+    if(/^\d{2,4}$/.test(i.str) && i.x < firstDateX-2){ cur={num:i.str, l2:[]}; rows.push(cur); return; }
+    if(!cur) return;
+    if(dateRe.test(i.str)) return;
+    if(i.x>=l2b && i.x<(col5min-2)) cur.l2.push(i);
+  });
+  const pairs=[];
+  rows.forEach(r=>{ const tu=stopNumToTU(r.num); if(!tu) return;
+    const reason=r.l2.sort((a,b)=>a.gy-b.gy || a.x-b.x).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+    pairs.push({tu, reason}); });
+  return pairs;
+}
+function parseSheetStopList(buf){
+  const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+  const norm=c=>(c==null?'':c).toString().trim().toLowerCase();
+  let hIdx=-1,uCol=-1,rCol=-1;
+  for(let i=0;i<Math.min(rows.length,25);i++){ const r=(rows[i]||[]).map(norm);
+    const u=r.findIndex(c=>/unit\s*(number|no|#)?/.test(c)||c==='tu'||c==='unit');
+    const rc=r.findIndex(c=>/reason\s*level\s*2/.test(c)||/level\s*2/.test(c));
+    if(u!==-1&&rc!==-1){ hIdx=i;uCol=u;rCol=rc;break; } }
+  if(hIdx===-1) return [];
+  const out=[];
+  for(let i=hIdx+1;i<rows.length;i++){ const tu=stopNumToTU(rows[i]&&rows[i][uCol]); if(!tu) continue;
+    const reason=(rows[i]&&rows[i][rCol]!=null?rows[i][rCol]:'').toString().trim(); out.push({tu, reason}); }
+  return out;
+}
+function stopFileChosen(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  const name=(f.name||'').toLowerCase();
+  stopSetStatus('info','Reading '+f.name+'\u2026'); if($("stopUpload")) $("stopUpload").innerHTML='';
+  const reader=new FileReader();
+  reader.onload=async e=>{
+    try{
+      let pairs;
+      if(name.endsWith('.pdf')){ await loadPdfJs(); pairs=await parsePdfStopList(e.target.result); }
+      else { if(typeof XLSX==='undefined') throw new Error('Spreadsheet reader not loaded.'); pairs=parseSheetStopList(e.target.result); }
+      pairs=dedupPairs(pairs);
+      if(!pairs.length){ stopSetStatus('bad','No Stop List rows found in '+f.name+'. If the layout differs, send me the file.'); return; }
+      stopPendingPairs=pairs; stopRenderPreview(pairs, f.name); stopSetStatus('','');
+    }catch(err){ if($("stopUpload")) $("stopUpload").innerHTML=''; stopSetStatus('bad','Could not read file: '+((err&&err.message)||err)); }
+  };
+  reader.readAsArrayBuffer(f); ev.target.value='';
+}
+function stopRenderPreview(pairs, filename){
+  const el=$("stopUpload"); if(!el) return;
+  const trs=pairs.map(p=>'<tr><td>'+escapeHtml(p.tu)+'</td><td>'+escapeHtml(p.reason)+'</td></tr>').join('');
+  el.innerHTML='<div class="rep-summary-head">From '+escapeHtml(filename)+' \u00b7 '+pairs.length+' unit(s) to stop</div>'+
+    '<div class="rep-tablewrap" style="max-width:640px"><table class="rep-table"><thead><tr><th>Unit</th><th>Reason (Stopped Reason Level 2)</th></tr></thead><tbody>'+trs+'</tbody></table></div>'+
+    '<div class="rep-empty" style="padding:8px 0">Applying will set these units STOP=true and <b>un-stop any currently-stopped unit not in this list</b>.</div>'+
+    '<div class="stop-actions"><button class="btn primary" id="stopApplyFile">Apply to stop list</button><button class="btn" id="stopCancelFile">Cancel</button></div>';
+  $("stopApplyFile").onclick=stopApplyFile;
+  $("stopCancelFile").onclick=()=>{ stopPendingPairs=null; el.innerHTML=''; stopSetStatus('',''); };
+}
+async function stopApplyFile(){
+  if(!stopPendingPairs||!stopPendingPairs.length) return;
+  if(!confirm('Apply the report? This stops '+stopPendingPairs.length+' unit(s) and removes any currently-stopped unit not in the file.')) return;
+  stopSetStatus('info','Syncing stop list\u2026');
+  try{
+    if(!CONFIG.appId||!CONFIG.jsKey){ stopSetStatus('bad','Add your App ID and JavaScript Key in \u2699 first.'); return; }
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    const all=await new Parse.Query("TU_Status").limit(1000).find();
+    const byTU={}; all.forEach(o=>{ byTU[(o.get("TU")||'').toString().trim().toUpperCase()]=o; });
+    const fileSet=new Set(stopPendingPairs.map(p=>p.tu.toUpperCase()));
+    const toSave=new Set();
+    stopPendingPairs.forEach(p=>{ const k=p.tu.toUpperCase(); let o=byTU[k]; if(!o){ o=new Parse.Object("TU_Status"); o.set("TU",p.tu); byTU[k]=o; } o.set("STOP",true); o.set("REASON",p.reason||''); toSave.add(o); });
+    let removed=0;
+    all.forEach(o=>{ const k=(o.get("TU")||'').toString().trim().toUpperCase(); if(o.get("STOP")===true && !fileSet.has(k)){ o.set("STOP",false); toSave.add(o); removed++; } });
+    await Parse.Object.saveAll([...toSave]);
+    stopSetStatus('ok','Synced \u00b7 '+stopPendingPairs.length+' stopped, '+removed+' removed.');
+    stopPendingPairs=null; if($("stopUpload")) $("stopUpload").innerHTML=''; loadStopList();
+  }catch(err){ stopSetStatus('bad','Sync failed: '+((err&&err.message)||err)+' \u2014 TU_Status must allow find/create/update.'); }
 }
 function openReports(){
   renderReportSubtabs();
@@ -1833,6 +1948,7 @@ $("adminCreate").onclick=adminCreateUser;
 $("stopRefresh").onclick=loadStopList;
 $("stopAdd").onclick=()=>stopUpsert(true);
 $("stopRemove").onclick=()=>stopUpsert(false);
+$("stopFile").addEventListener("change", stopFileChosen);
 $("errUploadBtn").onclick=()=>$("errFile").click();
 $("errFile").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; handleErrFile(f); e.target.value=""; });
 $("errSaveBtn").onclick=saveErrToB4a;

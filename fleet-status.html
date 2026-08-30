@@ -1940,12 +1940,9 @@ async function runDailyReset() {
 function initDailyResetButton() {
   document.getElementById('dailyResetBtn').addEventListener('click', () => {
     const ok = confirm(
-      'Run the daily reset now?\n\n' +
-      'This will download a CSV of every record currently in Live_Alarms (acknowledged and not), then ' +
-      'PERMANENTLY DELETE every one of them from Back4App — the entire class, with no exceptions, in one ' +
-      'run (paged past Back4App\'s 1000-row-per-query limit, so this empties it even if it has grown ' +
-      'larger than that). Out of Service units are included too — their Out of Service status itself is ' +
-      'not affected, only their alarm history.\n\n' +
+      'Run the reset now?\n\n' +
+      'This will download a CSV of every record currently in Live Alarms, then ' +
+      'PERMANENTLY DELETE every one of them ' +
       'This is not reversible: once deleted, the only remaining copy of that data is the CSV that just ' +
       'downloaded. Continue?'
     );

@@ -567,7 +567,7 @@
     <span class="sub">Annunciator panel</span>
     <div class="spacer"></div>
     <button class="btn icon" id="fleetstatusReload" title="Reload">⟳</button>
-    <a class="btn icon" id="fleetstatusOpen" href="./fleet-status-panel/index.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
+    <a class="btn icon" id="fleetstatusOpen" href="./fleet-status.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
   </div>
   <iframe id="fleetstatusFrame" title="AOR Fleet Status Panel"></iframe>
 </section>
@@ -661,7 +661,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "4.6";
+const APP_VERSION = "4.7";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -889,7 +889,7 @@ function showView(name){
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   const el = $(name+"View") || $("homeView");
   if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./train_inspection.html"); }
-  if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./fleet-status-panel/index.html"); }
+  if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./fleet-status.html"); }
   if(el) el.style.display="";
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
@@ -1822,7 +1822,7 @@ $("brandHome").onclick=()=>showView("home");
 $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
 $("fleetstatusHome").onclick=()=>showView("home");
-$("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src","./fleet-status-panel/index.html"); };
+$("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src","./fleet-status.html"); };
 $("reportsHome").onclick=()=>showView("home");
 $("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
 $("errorlogHome").onclick=()=>showView("home");

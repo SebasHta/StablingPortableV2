@@ -1,0 +1,3081 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AOR Fleet Status Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0f17;
+    --panel:#111827;
+    --panel-border:#1f2937;
+    --ink:#e5e9f0;
+    --ink-muted:#8a93a6;
+    --ink-dim:#5b6472;
+    --tile-gap:7px;
+
+    --good:#1fa550;
+    --good-light:#33d96f;
+    --good-dark:#12602f;
+    --good-ink:#eafff1;
+    --warn:#e8a317;
+    --warn-light:#eebd58;
+    --warn-dark:#9e6f10;
+    --warn-ink:#1a1200;
+    --crit:#c0392b;
+    --crit-light:#da6559;
+    --crit-dark:#7d251c;
+    --crit-ink:#fff0ee;
+    --oos:#6b7686;
+    --oos-light:#919aa7;
+    --oos-dark:#474e59;
+    --oos-ink:#f2f4f7;
+    --maint:#2f6fbf;
+    --maint-light:#5b96e0;
+    --maint-dark:#1f4a80;
+    --maint-ink:#eaf3ff;
+
+    --focus:#4da3ff;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Poppins",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{
+    max-width:2200px;
+    margin:0 auto;
+    padding:22px 28px 28px;
+  }
+
+  header{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:14px;
+    margin-bottom:18px;
+  }
+
+  .title-block{
+    display:flex;
+    align-items:center;
+    gap:16px;
+  }
+
+  .title-block .logo{
+    height:56px;
+    width:auto;
+    display:block;
+    flex-shrink:0;
+  }
+
+  .title-block h1{
+    margin:0;
+    font-size:36px;
+    font-weight:800;
+    letter-spacing:.2px;
+  }
+
+  .title-block p{
+    margin:4px 0 0;
+    color:var(--ink-muted);
+    font-size:13px;
+  }
+
+  @media (max-width:640px){
+    .title-block .logo{ height:40px; }
+  }
+
+  .badges{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+
+  .badge{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:8px 14px;
+    font-size:14px;
+    font-weight:600;
+  }
+
+  .badge .dot{
+    width:10px; height:10px; border-radius:50%; flex:none;
+  }
+
+  .badge .count{
+    color:var(--ink-muted);
+    font-weight:700;
+    margin-left:2px;
+  }
+
+  .dot.good{ background:var(--good); }
+  .dot.warn{ background:var(--warn); }
+  .dot.crit{ background:var(--crit); }
+  .dot.oos{ background:var(--oos); }
+  .dot.maint{ background:var(--maint); }
+
+  .kpi-bottom{
+    display:grid;
+    grid-template-columns:repeat(5, 1fr);
+    gap:12px;
+    margin-top:18px;
+  }
+  .kpi-card{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:16px 18px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .kpi-card .kpi-label{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+  }
+  .kpi-card .kpi-value{ font-size:34px; font-weight:800; line-height:1; }
+  .kpi-card.failure .kpi-value{ color:#ff6b5e; }
+  .kpi-card.review .kpi-value{ color:#f2b93b; }
+  .kpi-card.maintenance .kpi-value{ color:#5b96e0; }
+  .kpi-card.out_of_service .kpi-value{ color:#c3c9d4; }
+  .kpi-card.healthy .kpi-value{ color:#3fd679; }
+
+  @media (max-width:900px){
+    .kpi-bottom{ grid-template-columns:repeat(3, 1fr); }
+  }
+  @media (max-width:640px){
+    .kpi-bottom{ grid-template-columns:repeat(2, 1fr); }
+  }
+
+  /*
+   * ── TABS (Tiles / List) ──────────────────────────────────────────────
+   * Two views over the exact same live data (lastUnitsByTu) — the grid of
+   * annunciator tiles, or a flat table of every alarm. Switching tabs never
+   * re-fetches anything; render() populates both on every poll regardless
+   * of which one is currently visible, so switching to List always shows
+   * the latest data, not a stale snapshot from whenever it was last shown.
+   */
+  .tabs{
+    display:flex;
+    gap:6px;
+    margin-bottom:14px;
+    border-bottom:1px solid var(--panel-border);
+  }
+  .tab-btn{
+    appearance:none;
+    background:transparent;
+    border:none;
+    border-bottom:2px solid transparent;
+    color:var(--ink-muted);
+    font-family:inherit;
+    font-size:14px;
+    font-weight:600;
+    padding:10px 6px;
+    cursor:pointer;
+    transition:color .1s ease, border-color .1s ease;
+  }
+  .tab-btn:hover{ color:var(--ink); }
+  .tab-btn[aria-selected="true"]{ color:var(--ink); border-bottom-color:var(--focus); }
+  .tab-panel[hidden]{ display:none; }
+
+  .alarm-table-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .alarm-table-summary{ font-size:13px; color:var(--ink-muted); }
+  .alarm-table-summary strong{ color:var(--ink); }
+  .alarm-table-actions{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .alarm-filter{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .alarm-filter button{
+    appearance:none;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    color:var(--ink-muted);
+    border-radius:7px;
+    padding:5px 11px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .alarm-filter button:hover{ color:var(--ink); }
+  .alarm-filter button[aria-pressed="true"]{ color:var(--ink); border-color:var(--focus); background:rgba(77,163,255,.12); }
+
+  .alarm-table-scroll{
+    overflow-x:auto;
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+  }
+  table.alarm-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13.5px;
+  }
+  table.alarm-table thead th{
+    text-align:left;
+    padding:10px 14px;
+    background:var(--panel);
+    color:var(--ink-muted);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    border-bottom:1px solid var(--panel-border);
+    white-space:nowrap;
+    position:sticky;
+    top:0;
+  }
+  table.alarm-table tbody tr{
+    border-bottom:1px solid var(--panel-border);
+    cursor:pointer;
+  }
+  table.alarm-table tbody tr:last-child{ border-bottom:none; }
+  table.alarm-table tbody tr:hover{ background:rgba(255,255,255,.03); }
+  table.alarm-table td{
+    padding:10px 14px;
+    vertical-align:top;
+  }
+  table.alarm-table .al-tu{ font-weight:700; white-space:nowrap; }
+  table.alarm-table .al-sev{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-weight:700;
+    font-size:12.5px;
+    white-space:nowrap;
+  }
+  table.alarm-table .al-sev .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+  table.alarm-table .al-msg{ color:var(--ink-muted); }
+  table.alarm-table .al-ack{
+    display:inline-block;
+    padding:2px 9px;
+    border-radius:20px;
+    font-size:11.5px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  table.alarm-table .al-ack.yes{ background:rgba(31,165,80,.16); color:#3fd679; }
+  table.alarm-table .al-ack.no{ background:rgba(192,57,43,.16); color:#ff9d94; }
+  .alarm-table-empty{
+    padding:40px 20px;
+    text-align:center;
+    color:var(--ink-dim);
+    font-style:italic;
+  }
+
+  .demo-flag{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:#ffcf6e;
+    background:rgba(232,163,23,.12);
+    border:1px solid rgba(232,163,23,.35);
+    border-radius:6px;
+    padding:4px 8px;
+  }
+
+  .header-actions{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+
+  .btn-manual{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    color:var(--ink);
+    border-radius:8px;
+    padding:9px 15px;
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn-manual:hover{ border-color:var(--focus); color:#cfe4ff; }
+
+  .manual-badge{
+    position:absolute;
+    top:5px;
+    left:5px;
+    width:16px;
+    height:16px;
+    border-radius:50%;
+    background:rgba(0,0,0,.32);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:9px;
+    line-height:1;
+  }
+
+  .form-row{ margin-bottom:14px; }
+  .form-row label{
+    display:block;
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+    margin-bottom:6px;
+  }
+  .form-row input[type="text"],
+  .form-row textarea{
+    width:100%;
+    background:#0c1018;
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    color:var(--ink);
+    padding:9px 11px;
+    font-size:13.5px;
+    font-family:inherit;
+    resize:vertical;
+  }
+  .form-row input[type="text"]:focus,
+  .form-row textarea:focus{ outline:none; border-color:var(--focus); }
+
+  .status-choice{ display:flex; gap:8px; }
+  .status-choice label{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:9px 8px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    text-transform:none;
+    letter-spacing:0;
+    color:var(--ink);
+  }
+  .status-choice input{ margin:0; accent-color:var(--focus); }
+  .status-choice label.sel-review{ border-color:rgba(232,163,23,.5); }
+  .status-choice label.sel-oos{ border-color:rgba(107,118,134,.6); }
+
+  .manage-list{ margin-top:18px; border-top:1px solid var(--panel-border); padding-top:14px; }
+  .manage-list h3{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+    margin:0 0 10px;
+  }
+  .manage-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 0;
+    border-bottom:1px solid var(--panel-border);
+    font-size:13px;
+  }
+  .manage-row:last-child{ border-bottom:none; }
+  .manage-row .mr-tu{ font-weight:700; width:56px; flex:none; }
+  .manage-row .mr-status{ flex:none; }
+  .manage-row .mr-status.review{ color:#f2b93b; }
+  .manage-row .mr-status.out_of_service{ color:#c3c9d4; }
+  .manage-row .mr-desc{ flex:1; color:var(--ink-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .manage-row .mr-clear{
+    flex:none;
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--ink-muted);
+    border-radius:6px;
+    padding:4px 9px;
+    font-size:12px;
+    cursor:pointer;
+  }
+  .manage-row .mr-clear:hover{ color:#ff6b5e; border-color:#ff6b5e; }
+  .manage-empty{ color:var(--ink-dim); font-size:13px; font-style:italic; }
+
+  .underlying-block{
+    background:#0c1018;
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:10px 12px;
+    margin-bottom:16px;
+    font-size:12.5px;
+    color:var(--ink-muted);
+  }
+  .underlying-block strong{ color:var(--ink); }
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(108px, 1fr));
+    gap:9px;
+    margin-bottom:18px;
+  }
+
+  .tile{
+    position:relative;
+    aspect-ratio:1.3 / 1;
+    border-radius:9px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:17px;
+    font-weight:700;
+    letter-spacing:.2px;
+    cursor:pointer;
+    outline:none;
+    border:1px solid rgba(0,0,0,.3);
+    box-shadow:
+      0 3px 6px rgba(0,0,0,.35),
+      inset 0 1px 0 rgba(255,255,255,.28),
+      inset 0 -3px 6px rgba(0,0,0,.22);
+    transition:transform .08s ease, box-shadow .08s ease, filter .08s ease;
+  }
+
+  .tile:hover, .tile:focus-visible{
+    transform:translateY(-2px);
+    filter:brightness(1.08);
+    box-shadow:
+      0 6px 12px rgba(0,0,0,.4),
+      inset 0 1px 0 rgba(255,255,255,.32),
+      inset 0 -3px 6px rgba(0,0,0,.22),
+      0 0 0 2px var(--focus);
+    z-index:2;
+  }
+
+  .tile:active{
+    transform:translateY(1px);
+    filter:brightness(0.94);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,.35),
+      inset 0 2px 5px rgba(0,0,0,.35);
+  }
+
+  .tile.healthy{
+    background:linear-gradient(155deg, var(--good-light) 0%, var(--good) 55%, var(--good-dark) 100%);
+    color:var(--good-ink);
+    border-color:var(--good-dark);
+  }
+  .tile.review{
+    background:linear-gradient(155deg, var(--warn-light) 0%, var(--warn) 55%, var(--warn-dark) 100%);
+    color:var(--warn-ink);
+    border-color:var(--warn-dark);
+  }
+  .tile.failure{
+    background:linear-gradient(155deg, var(--crit-light) 0%, var(--crit) 55%, var(--crit-dark) 100%);
+    color:var(--crit-ink);
+    border-color:var(--crit-dark);
+  }
+  .tile.maintenance{
+    background:linear-gradient(155deg, var(--maint-light) 0%, var(--maint) 55%, var(--maint-dark) 100%);
+    color:var(--maint-ink);
+    border-color:var(--maint-dark);
+  }
+  /*
+   * Out of service ALWAYS renders gray, regardless of what any Live_Alarms
+   * record for that unit says — see loadFleet(): an out_of_service unit is
+   * decided (roster pin, manual override, or shared-file seed) before any
+   * live alarm is even looked at, so this class and the severity classes
+   * above are mutually exclusive by construction, not just by CSS order.
+   */
+  .tile.out_of_service{
+    background:linear-gradient(155deg, var(--oos-light) 0%, var(--oos) 55%, var(--oos-dark) 100%);
+    color:var(--oos-ink);
+    border-color:var(--oos-dark);
+  }
+
+  /*
+   * ── FLASHING ALARM LIGHTS ────────────────────────────────────────────
+   * Any tile showing failure (red), review (amber), or maintenance (blue)
+   * is, by construction, an unacknowledged/active alarm — a unit only ever
+   * carries one of these three classes when it has at least one alarm that
+   * isn't acknowledged (see pickWorstActiveAlarm() in the main script), so
+   * the tile's own status class is already exactly the signal needed here
+   * — no separate "is this new/unacknowledged" tracking required. A
+   * ::after glow ring is animated (not the tile's own box-shadow) so the
+   * 3D depth shadow and the hover/focus ring above are untouched by the
+   * flash. Failure flashes fastest, then review, then maintenance slowest
+   * — the usual "more urgent = faster blink" annunciator convention.
+   * Stops the instant every alarm on that unit is acknowledged or clears.
+   */
+  .tile.failure::after,
+  .tile.review::after,
+  .tile.maintenance::after{
+    content:'';
+    position:absolute;
+    inset:-3px;
+    border-radius:12px;
+    pointer-events:none;
+    box-shadow:0 0 0 3px currentColor, 0 0 16px 4px currentColor;
+    opacity:0;
+  }
+  .tile.failure::after{ color:var(--crit); animation:tile-flash .9s steps(1,end) infinite; }
+  .tile.review::after{ color:var(--warn); animation:tile-flash 1.6s steps(1,end) infinite; }
+  .tile.maintenance::after{ color:var(--maint); animation:tile-flash 2.2s steps(1,end) infinite; }
+
+  @keyframes tile-flash{
+    0%, 49%{ opacity:.95; }
+    50%, 100%{ opacity:0; }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .tile.failure::after, .tile.review::after, .tile.maintenance::after{ animation:none; opacity:.55; }
+  }
+
+  .ack-badge{
+    position:absolute;
+    top:5px;
+    right:5px;
+    width:16px;
+    height:16px;
+    border-radius:50%;
+    background:rgba(0,0,0,.32);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:10px;
+    line-height:1;
+  }
+
+  .tooltip{
+    position:fixed;
+    pointer-events:none;
+    background:#080b12;
+    border:1px solid var(--panel-border);
+    color:var(--ink);
+    padding:10px 12px;
+    border-radius:8px;
+    font-size:12.5px;
+    line-height:1.45;
+    max-width:280px;
+    box-shadow:0 8px 24px rgba(0,0,0,.45);
+    opacity:0;
+    transform:translateY(4px);
+    transition:opacity .1s ease, transform .1s ease;
+    z-index:50;
+  }
+  .tooltip.show{ opacity:1; transform:translateY(0); }
+  .tooltip .tt-tu{ font-weight:700; font-size:13px; margin-bottom:2px; }
+  .tooltip .tt-status{ font-weight:600; margin-bottom:4px; }
+  .tooltip .tt-status.healthy{ color:#3fd679; }
+  .tooltip .tt-status.review{ color:#f2b93b; }
+  .tooltip .tt-status.failure{ color:#ff6b5e; }
+  .tooltip .tt-status.maintenance{ color:#5b96e0; }
+  .tooltip .tt-status.out_of_service{ color:#aeb6c2; }
+  .tooltip .tt-msg{ color:var(--ink-muted); }
+  .tooltip .tt-alarm-list{ margin:2px 0 0; padding:0; list-style:none; }
+  .tooltip .tt-alarm-item{
+    padding:6px 0;
+    border-top:1px solid rgba(255,255,255,.1);
+  }
+  .tooltip .tt-alarm-item:first-child{ border-top:none; }
+  .tooltip .tt-alarm-sev{ font-weight:700; font-size:11.5px; }
+  .tooltip .tt-alarm-sev.failure{ color:#ff6b5e; }
+  .tooltip .tt-alarm-sev.review{ color:#f2b93b; }
+  .tooltip .tt-alarm-sev.maintenance{ color:#5b96e0; }
+  .tooltip .tt-alarm-ack{ color:var(--ink-dim); font-weight:600; }
+
+  .ticker-panel{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:14px 18px;
+  }
+
+  .ticker-head{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+    margin-bottom:10px;
+  }
+
+  .ticker-head .n{ color:var(--ink); }
+
+  .ticker-body{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px 0;
+    font-size:13.5px;
+    line-height:1.6;
+  }
+
+  .ticker-body .empty{ color:var(--ink-dim); font-style:italic; }
+
+  .alert-item{ white-space:nowrap; }
+  .alert-item .tu{ font-weight:700; }
+  .alert-item.failure .tu{ color:#ff6b5e; }
+  .alert-item.review .tu{ color:#f2b93b; }
+  .alert-item.maintenance .tu{ color:#5b96e0; }
+  .alert-item .msg{ color:var(--ink-muted); }
+  .sep{ color:var(--ink-dim); margin:0 12px; }
+
+  .load-error{
+    background:var(--panel);
+    border:1px solid var(--crit);
+    border-radius:10px;
+    padding:16px 18px;
+    color:#ffb3aa;
+    font-size:13.5px;
+    line-height:1.6;
+    margin-bottom:18px;
+  }
+  .load-error code{
+    background:#000;
+    padding:1px 6px;
+    border-radius:4px;
+    color:#eee;
+  }
+  .load-error.warn{
+    border-color:var(--warn);
+    color:#ffe1a6;
+  }
+
+  .modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(4,6,10,.6);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:100;
+  }
+  .modal-overlay[hidden]{ display:none; }
+
+  .modal{
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:22px 24px;
+    width:100%;
+    max-width:400px;
+    /* A unit with several active alarms (see "modal-alarm-list" below) can
+       render taller than the viewport — without a cap + scroll here, the
+       Acknowledge button at the bottom becomes unreachable, nothing on the
+       page scrolls to get to it. Capped to the overlay's own 20px padding
+       (see .modal-overlay above) so the modal never touches the viewport
+       edges, and scrolls internally once its content doesn't fit. */
+    max-height:calc(100vh - 40px);
+    overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);
+    position:relative;
+  }
+
+  .modal-close{
+    position:absolute;
+    top:12px; right:12px;
+    width:28px; height:28px;
+    border-radius:6px;
+    border:none;
+    background:transparent;
+    color:var(--ink-muted);
+    font-size:18px;
+    line-height:1;
+    cursor:pointer;
+  }
+  .modal-close:hover{ background:rgba(255,255,255,.08); color:var(--ink); }
+
+  .modal-tu{ font-size:22px; font-weight:700; margin:0 0 4px; }
+
+  .modal-status{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    padding:3px 9px;
+    border-radius:6px;
+    margin-bottom:14px;
+  }
+  .modal-status.healthy{ background:rgba(31,165,80,.16); color:#3fd679; }
+  .modal-status.review{ background:rgba(232,163,23,.16); color:#f2b93b; }
+  .modal-status.failure{ background:rgba(192,57,43,.18); color:#ff6b5e; }
+  .modal-status.maintenance{ background:rgba(47,111,191,.2); color:#5b96e0; }
+  .modal-status.out_of_service{ background:rgba(107,118,134,.2); color:#c3c9d4; }
+
+  .modal-alarm-list{ margin-bottom:16px; display:flex; flex-direction:column; gap:8px; }
+  .modal-alarm-list .modal-detail{ margin-bottom:0; }
+  .modal-alarm-list .alarm-sev{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .modal-alarm-list .alarm-sev.failure{ color:#ff6b5e; }
+  .modal-alarm-list .alarm-sev.review{ color:#f2b93b; }
+  .modal-alarm-list .alarm-sev.maintenance{ color:#5b96e0; }
+  .modal-alarm-list .alarm-ack{ color:var(--ink-dim); font-weight:600; font-size:11.5px; }
+
+  .modal-detail{
+    background:#0c1018;
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:12px 14px;
+    margin-bottom:16px;
+  }
+  .modal-detail .code{ font-weight:700; margin-bottom:4px; }
+  .modal-detail .msg{ color:var(--ink-muted); font-size:13.5px; line-height:1.5; }
+  .modal-empty{ color:var(--ink-dim); font-size:13.5px; margin-bottom:16px; }
+
+  .modal-ack-note{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:13px;
+    color:#3fd679;
+    margin-bottom:16px;
+  }
+
+  .modal-actions{ display:flex; gap:10px; }
+
+  .btn{
+    flex:1;
+    padding:10px 14px;
+    border-radius:8px;
+    border:1px solid var(--panel-border);
+    background:transparent;
+    color:var(--ink);
+    font-size:13.5px;
+    font-weight:600;
+    cursor:pointer;
+    transition:filter .1s ease;
+  }
+  .btn:hover{ filter:brightness(1.15); }
+  .btn:disabled{ opacity:.55; cursor:default; }
+
+  .btn-ack{ background:var(--crit); border-color:var(--crit); color:#fff0ee; }
+  .btn-unack{ background:transparent; }
+
+  .modal-error{
+    color:#ffb3aa;
+    font-size:12.5px;
+    line-height:1.5;
+    margin-top:12px;
+  }
+
+  footer{
+    margin-top:14px;
+    color:var(--ink-dim);
+    font-size:11.5px;
+  }
+
+  @media (max-width:640px){
+    .grid{ grid-template-columns:repeat(auto-fill, minmax(78px, 1fr)); }
+    .tile{ font-size:14px; }
+    .title-block h1{ font-size:28px; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title-block">
+        <img class="logo" src="data:image/png;base64,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" alt="Auckland One Rail" />
+        <div>
+          <h1>AOR Fleet Status Panel</h1>
+          <p id="demoFlagInline"></p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="badges" id="badges"></div>
+        <button class="btn-manual" id="soundToggleBtn" type="button">🔔 Sound on</button>
+        <button class="btn-manual" id="ackReportBtn" type="button">🧾 Acknowledgment report</button>
+        <button class="btn-manual" id="dailyResetBtn" type="button" title="Downloads a CSV of every alarm, then acknowledges them all in Live_Alarms — except Out of Service units, left untouched">🔄 Reset Alarms</button>
+        <button class="btn-manual" id="manualBtn" type="button">⚙️ Set unit status</button>
+      </div>
+    </header>
+
+    <div id="loadError" style="display:none" class="load-error"></div>
+    <div id="liveWarning" style="display:none" class="load-error warn"></div>
+
+    <div class="tabs" role="tablist" aria-label="Panel view">
+      <button class="tab-btn" id="tabBtnTiles" type="button" role="tab" aria-selected="true" aria-controls="tabPanelTiles">▦ Tiles</button>
+      <button class="tab-btn" id="tabBtnList" type="button" role="tab" aria-selected="false" aria-controls="tabPanelList">☰ List</button>
+    </div>
+
+    <div class="tab-panel" id="tabPanelTiles" role="tabpanel" aria-labelledby="tabBtnTiles">
+      <div class="grid" id="grid" role="list" aria-label="Fleet unit status grid"></div>
+
+      <div class="ticker-panel">
+        <div class="ticker-head">Active alerts · <span class="n" id="alertCount">0</span> of <span class="n" id="unitCount">0</span></div>
+        <div class="ticker-body" id="ticker"></div>
+      </div>
+
+      <div class="kpi-bottom" id="kpiBottom"></div>
+    </div>
+
+    <div class="tab-panel" id="tabPanelList" role="tabpanel" aria-labelledby="tabBtnList" hidden>
+      <div id="alarmListWrap"></div>
+    </div>
+
+    <footer id="footer"></footer>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTu">
+      <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="manageOverlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="manageTitle" style="max-width:440px">
+      <button class="modal-close" id="manageClose" aria-label="Close">×</button>
+      <h2 class="modal-tu" id="manageTitle" style="font-size:19px">Set unit status manually</h2>
+      <div id="manageBody"></div>
+    </div>
+  </div>
+  <div class="modal-overlay" id="ackReportOverlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ackReportTitle" style="max-width:640px">
+      <button class="modal-close" id="ackReportClose" aria-label="Close">×</button>
+      <h2 class="modal-tu" id="ackReportTitle" style="font-size:19px">Acknowledgment report</h2>
+      <div id="ackReportBody"></div>
+    </div>
+  </div>
+
+  <datalist id="unitList"></datalist>
+
+<!--
+  data/units.js sets window.__FLEET_DATA__ via a plain <script src>, which
+  loads fine even when this file is opened directly (file://) — unlike
+  fetch()/XHR, browsers don't block a same-folder <script src> over file://.
+  This is what lets the panel work by just double-clicking index.html, no
+  local server needed. See README.md → "Local preview vs. live data".
+-->
+<script>
+window.__FLEET_DATA__ = {
+  "_meta": {
+    "source": "PLACEHOLDER / DEMO DATA \u2014 not live. Generated to preview the panel with real TU codes from TU_LIST.xlsx.",
+    "generated": "2026-08-25",
+    "replace_with": "Live query result from PostgreSQL fleet_status view/table \u2014 see README.md 'Connecting to PostgreSQL' section.",
+    "schema": {
+      "tu": "string \u2014 train unit code, primary key",
+      "status": "one of: healthy | review | maintenance | out_of_service | failure",
+      "alert_code": "optional \u2014 short alarm label, present when status is review, maintenance, or failure",
+      "alert_message": "optional \u2014 full instruction text, present when status is review, maintenance, or failure"
+    }
+  },
+  "units": [
+    {
+      "tu": "AM103",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM116",
+      "status": "review",
+      "alert_code": "Door sensor intermittent",
+      "alert_message": "Door 3R sensor flapping \u2014 monitor, schedule inspection"
+    },
+    {
+      "tu": "AM129",
+      "status": "maintenance",
+      "alert_code": "Scheduled inspection due",
+      "alert_message": "Consumables check due within 500km — not a fault, plan a depot visit"
+    },
+    {
+      "tu": "AM131",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM144",
+      "status": "maintenance",
+      "alert_code": "Software update pending",
+      "alert_message": "New firmware staged, awaiting a maintenance window to install"
+    },
+    {
+      "tu": "AM157",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM172",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM185",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM198",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM212",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM225",
+      "status": "review",
+      "alert_code": "Air compressor cycling high",
+      "alert_message": "Compressor duty cycle above baseline \u2014 monitor"
+    },
+    {
+      "tu": "AM238",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM240",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM253",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM266",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM279",
+      "status": "review",
+      "alert_code": "Software update pending",
+      "alert_message": "Firmware update available \u2014 schedule during next depot visit"
+    },
+    {
+      "tu": "AM281",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM294",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM306",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM319",
+      "status": "review",
+      "alert_code": "Pantograph wear warning",
+      "alert_message": "Pantograph carbon strip wear \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM321",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM334",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM347",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM362",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM375",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM388",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM390",
+      "status": "review",
+      "alert_code": "HVAC fault code",
+      "alert_message": "HVAC unit 1 fault code E12 \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM402",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM415",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM428",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM430",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM443",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM456",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM469",
+      "status": "review",
+      "alert_code": "Brake wear \u2013 inspect",
+      "alert_message": "Brake pad wear threshold reached \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM471",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM484",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM497",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM509",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM511",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM524",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM537",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM552",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM565",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM578",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM580",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM593",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM605",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM618",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM620",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM633",
+      "status": "review",
+      "alert_code": "Battery voltage low",
+      "alert_message": "Aux battery below nominal \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM646",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM659",
+      "status": "review",
+      "alert_code": "HVAC fault code",
+      "alert_message": "HVAC unit 1 fault code E12 \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM661",
+      "status": "review",
+      "alert_code": "Wheel flat detected",
+      "alert_message": "Wheel flat detected axle 3 \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM674",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM687",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM701",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM714",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM810",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM823",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM836",
+      "status": "failure",
+      "alert_code": "Brake system failure",
+      "alert_message": "Emergency brake applied \u2014 remove from service"
+    },
+    {
+      "tu": "AM849",
+      "status": "review",
+      "alert_code": "Coupler sensor warning",
+      "alert_message": "Coupler position sensor drift \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM851",
+      "status": "failure",
+      "alert_code": "Door failure \u2013 stuck open",
+      "alert_message": "Door 2L stuck open \u2014 remove from service"
+    },
+    {
+      "tu": "AM864",
+      "status": "failure",
+      "alert_code": "Signal comms loss",
+      "alert_message": "ATP comms timeout \u2014 remove from service"
+    },
+    {
+      "tu": "AM877",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM892",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM904",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM917",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM932",
+      "status": "review",
+      "alert_code": "Battery voltage low",
+      "alert_message": "Aux battery below nominal \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM945",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM958",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM960",
+      "status": "failure",
+      "alert_code": "Traction motor fault",
+      "alert_message": "Traction motor overcurrent \u2014 isolate car, contact CAF hot line"
+    },
+    {
+      "tu": "AM973",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1005",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1018",
+      "status": "review",
+      "alert_code": "Brake wear \u2013 inspect",
+      "alert_message": "Brake pad wear threshold reached \u2014 schedule inspection"
+    },
+    {
+      "tu": "AM1020",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1033",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1046",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1059",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1061",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1074",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1087",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1101",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1114",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1127",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1142",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1155",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1168",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1170",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1183",
+      "status": "review",
+      "alert_code": "Door sensor intermittent",
+      "alert_message": "Door 3R sensor flapping \u2014 monitor, schedule inspection"
+    },
+    {
+      "tu": "AM1196",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1208",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1210",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1223",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1236",
+      "status": "healthy"
+    },
+    {
+      "tu": "AM1249",
+      "status": "healthy"
+    }
+  ]
+};
+
+</script>
+<script>
+/*
+ * ── ROSTER (which TUs exist at all) ─────────────────────────────────────
+ * Two ways this panel gets its unit roster, tried in order:
+ *
+ * 1. window.__FLEET_DATA__ — set by data/units.js (loaded via <script src>
+ *    above). Placeholder/demo data (see its "_meta" block) generated from
+ *    TU_LIST.xlsx. Add units by editing data/units.js.
+ *
+ * 2. fetch(DATA_URL) — used only as a fallback, when data/units.js isn't
+ *    present. Point DATA_URL at a static file or API that returns the
+ *    shape documented in README.md → "Data contract".
+ *
+ * If BACK4APP_CONFIG below is filled in, each unit's status/alert is then
+ * OVERLAID from live Back4App data: severity/fault info from Live_Alarms
+ * (see "LIVE STATUS" further down), and Out of Service from the TU_Status
+ * class (see "OUT OF SERVICE (TU_Status)" further down) — that TU_Status
+ * overlay is the single source of truth for Out of Service once Back4App
+ * is configured, taking precedence over everything else, including a unit
+ * pinned to `out_of_service` directly in the roster. The roster's own
+ * `status`/`alert_*` fields (including such a pin) are only used as the
+ * fallback when Back4App isn't configured, a fetch fails, or TU_Status has
+ * no STOP=true record for that TU.
+ */
+const DATA_URL = './data/units.json';
+
+/*
+ * ── LIVE STATUS (Back4App) ──────────────────────────────────────────────
+ * Same pattern as atenea_dashboard.html's Back4App sync: paste your own
+ * Application ID / JavaScript Key below (Back4App dashboard → App
+ * Settings → Security & Keys). Leave either blank and this is fully
+ * disabled — no network calls, no errors — and the panel just renders
+ * whatever's in the roster above, same as before this feature existed.
+ *
+ * Severity mapping: L1 → red (failure). MA → blue (Maintenance Alert —
+ * informational, lowest urgency of the three). Any other non-empty
+ * severity (L2, L3, …) or an alarm record with no readable severity →
+ * amber (review required). A TU with no matching Live_Alarms record, or
+ * whose only alarm(s) are all acknowledged → healthy. A TU that's Out of
+ * Service is always gray, regardless of what any alarm says — see
+ * "Out of service" in loadFleet() below, that check happens before any
+ * alarm is even looked at.
+ *
+ * MULTIPLE ALARMS PER UNIT: a unit can have more than one active
+ * Live_Alarms record at once (e.g. an L1 and an MA together). The tile's
+ * own color always reflects the single worst unacknowledged one
+ * (pickWorstActiveAlarm(), failure > review > maintenance), but every
+ * alarm for that unit is kept (not just the worst) and shown as a list on
+ * hover — see attachTooltips() — and in that unit's detail modal.
+ *
+ * FIELD NAMES: confirmed against the real Live_Alarms schema (exported
+ * from Back4App — className "Live_Alarms" — 2026-08-25): tu, severity,
+ * alarmId, description/message are all real fields, so these map straight
+ * to them. Each is still a list tried in order (first present wins) as a
+ * safety net in case the schema changes later — if nothing in a fetched
+ * record matches, that record is skipped and a warning banner +
+ * console.warn (with the raw record) show up instead of silently
+ * rendering everyone as healthy. The schema also has actionRequired
+ * (Boolean), location, group/alarmGroup — not used here since the ask was
+ * severity-only red/amber, but they're there if this needs to grow later.
+ */
+const BACK4APP_CONFIG = {
+  appId: '9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio',
+  jsKey: 'OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM'
+};
+const LIVE_ALARMS_FIELDS = {
+  tu: ['tu'],
+  severity: ['severity'],
+  // "code" is the short label shown next to the TU in the ticker (e.g.
+  // "AM103 — …") and "message" is the longer tooltip detail. Schema has
+  // both `description` and `message` as free-text fields with no sample
+  // data to confirm which is the short readable one — defaulting to
+  // description first for the short label, alarmId as a last-resort ID if
+  // description is ever blank. Swap the order below if it reads backwards
+  // once real data flows (e.g. ticker shows a raw ID instead of text, or
+  // the tooltip repeats the ticker label verbatim).
+  code: ['description', 'alarmId'],
+  message: ['message', 'description'],
+  // A record with this field set to "off" (or false/0) is suppressed —
+  // fetched from Back4App but never shown, as if the alarm didn't exist.
+  // Missing entirely = shown (only an explicit "off" hides it).
+  flag: ['flag'],
+  // Acknowledgment now lives directly on the Live_Alarms record itself
+  // (see "ACKNOWLEDGING FAULTS" below for why) — this is the field
+  // read/written for that. Swap the name here if the real schema differs.
+  acknowledged: ['acknowledged'],
+  // When Back4App received/processed this alarm — a Parse Date field.
+  // Shown as its own column in the List tab and carried into every CSV
+  // download (List tab export, Reset Alarms, Acknowledgment report) so
+  // there's a record of when each alarm actually happened, not just when
+  // it was exported/acknowledged. See normalizeAteneaTimestamp() below —
+  // a raw REST fetch returns a Date field as { __type: "Date", iso: "…" },
+  // not a plain string, so that's read either way.
+  atenea_timestamp: ['AteneaTimestamp', 'ateneaTimestamp']
+};
+
+/*
+ * ── OUT OF SERVICE (TU_Status) ───────────────────────────────────────────
+ * A separate Parse class from Live_Alarms. One row per TU that's ever been
+ * touched: TU (the unit code), STOP (Boolean — true means pulled from
+ * service), REASON (free text — why). Same tolerant field-name matching as
+ * LIVE_ALARMS_FIELDS, in case the real schema's casing differs.
+ *
+ * A TU with STOP=true here is shown Out of Service everywhere in the panel
+ * — gray tile, "Out of service" in the KPI/list/CSV/daily-reset, REASON as
+ * its description — regardless of any Live_Alarms record or roster status.
+ * This is the ONLY source for Out of Service once Back4App is configured;
+ * see applyManualOverride() for the full precedence chain and "Set unit
+ * status" (renderManageBody()) for how the ⚙️ button writes here.
+ */
+const TU_STATUS_FIELDS = {
+  tu: ['TU', 'tu'],
+  stop: ['STOP', 'stop'],
+  reason: ['REASON', 'reason']
+};
+const LIVE_REFRESH_MS = 30000; // matches atenea_dashboard.html's own poll interval
+
+const STATUS_LABEL = {
+  healthy: 'Healthy',
+  review: 'Review required',
+  failure: 'In failure',
+  maintenance: 'Maintenance Alert',
+  out_of_service: 'Out of service'
+};
+
+// Worst-first. Used to pick which of a unit's several active alarms drives
+// the tile's color (see pickWorstActiveAlarm()) and to order the badges/KPI
+// cards consistently with that same severity — failure is the most urgent,
+// maintenance the least (it's informational, not a fault in progress).
+const STATUS_ORDER = ['failure', 'review', 'maintenance', 'out_of_service', 'healthy'];
+const SEVERITY_PRIORITY = { failure: 3, review: 2, maintenance: 1 };
+const STATUS_DOT_CLASS = { failure: 'crit', review: 'warn', maintenance: 'maint', out_of_service: 'oos', healthy: 'good' };
+
+let liveRefreshTimer = null;
+let lastUnitsByTu = {};
+
+// Most recently fetched TU_Status records, keyed by TU: { stop, reason,
+// object_id }. Populated by loadFleet() on every refresh; read by
+// applyManualOverride() (to decide a unit's Out of Service status) and by
+// renderManageBody()/renderModalBody() (to prefill and to know which
+// objectId to PUT when clearing). Empty when Back4App isn't configured.
+let lastTuStatusByTu = {};
+
+// Only used when Back4App isn't configured (or a fetch fails) — lets the
+// acknowledge feature still be tried out against the demo roster, but it's
+// session-only and resets on reload. See "Acknowledging faults" in README.md.
+let localAckOverrides = {};
+
+function suppressIfAcknowledged(rawStatus, acknowledged) {
+  return acknowledged && (rawStatus === 'failure' || rawStatus === 'review' || rawStatus === 'maintenance') ? 'healthy' : rawStatus;
+}
+
+// Given all of a unit's alarms (see byTu in loadFleet()), returns the one
+// that should drive the tile's color: the highest-severity alarm that is
+// NOT acknowledged. Returns null if there are no alarms, or every alarm on
+// this unit has already been acknowledged (in which case the unit is
+// healthy, per suppressIfAcknowledged's same rule applied alarm-by-alarm).
+function pickWorstActiveAlarm(alarms) {
+  let best = null;
+  for (const a of alarms) {
+    if (a.acknowledged) continue;
+    if (!best || SEVERITY_PRIORITY[a.status] > SEVERITY_PRIORITY[best.status]) best = a;
+  }
+  return best;
+}
+
+/*
+ * ── STATUS-CHANGE ALARM SOUND ────────────────────────────────────────────
+ * A short two-beep tone plays whenever ANY unit's displayed status differs
+ * from the previous render — a new fault, an escalation, a fault clearing,
+ * an acknowledge/un-acknowledge, or a manual override all count. Generated
+ * with the Web Audio API rather than an audio file, so the panel stays one
+ * self-contained HTML file with nothing extra to embed or host.
+ *
+ * Browsers block audio from playing before the page has seen a user
+ * gesture (click/keypress) — so if status changes happen before anyone has
+ * touched the page, that first alarm can be silent; every alarm after the
+ * first interaction plays normally. Muted with the 🔔/🔕 header button,
+ * which persists across reloads (localStorage).
+ */
+const SOUND_MUTED_KEY = 'aor_fleet_sound_muted_v1';
+let soundMuted = localStorage.getItem(SOUND_MUTED_KEY) === '1';
+let audioCtx = null;
+let previousStatusByTu = null; // null = no baseline yet (first render), so nothing to compare
+
+function ensureAudioCtx() {
+  if (audioCtx) return audioCtx;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioCtx = Ctx ? new Ctx() : null;
+  } catch (err) {
+    console.warn('Web Audio API not available — status-change alarm sound is disabled:', err);
+  }
+  return audioCtx;
+}
+
+function unlockAudio() {
+  const ctx = ensureAudioCtx();
+  if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+}
+document.addEventListener('pointerdown', unlockAudio, { once: true });
+document.addEventListener('keydown', unlockAudio, { once: true });
+
+function playAlarmTone() {
+  if (soundMuted) return;
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    [0, 0.22].forEach(offset => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.18);
+    });
+  } catch (err) {
+    console.warn('Could not play alarm tone:', err);
+  }
+}
+
+function initSoundToggle() {
+  const btn = document.getElementById('soundToggleBtn');
+  const refresh = () => {
+    btn.textContent = soundMuted ? '🔕 Sound off' : '🔔 Sound on';
+    btn.title = soundMuted
+      ? 'Status-change alarm sound is muted — click to unmute'
+      : 'Status-change alarm sound is on — click to mute';
+  };
+  refresh();
+  btn.addEventListener('click', () => {
+    soundMuted = !soundMuted;
+    try { localStorage.setItem(SOUND_MUTED_KEY, soundMuted ? '1' : '0'); } catch (err) { /* ignore */ }
+    refresh();
+  });
+}
+
+/*
+ * ── SHARED FILE-DOWNLOAD HELPER ──────────────────────────────────────────
+ * Used by both the acknowledgment report (CSV) and the out-of-service
+ * export (JSON) below. Plain client-side Blob download — works even when
+ * this panel is opened directly as a file:// page, no server involved.
+ */
+function downloadBlob(filename, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function timestampForFilename() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+/*
+ * ── ACKNOWLEDGMENT REPORT (local register) ───────────────────────────────
+ * Every acknowledge action taken from this browser is logged here
+ * (localStorage, key aor_fleet_ack_log_v1), independent of Back4App — so
+ * there's always a local register of what was acknowledged and when, even
+ * though the live "acknowledged" flag itself now lives directly on the
+ * Live_Alarms record (see "ACKNOWLEDGING FAULTS" below). Newest first.
+ * Un-acknowledge actions are logged too (so the register also shows when
+ * something was reversed) but only "Acknowledged" entries appear in the
+ * report/CSV, per the ask: a register of alarms that have been
+ * acknowledged.
+ */
+const ACK_LOG_KEY = 'aor_fleet_ack_log_v1';
+
+function loadAckLog() {
+  try {
+    const raw = localStorage.getItem(ACK_LOG_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    console.warn('Could not read acknowledgment log from localStorage:', err);
+    return [];
+  }
+}
+
+function saveAckLog() {
+  try {
+    localStorage.setItem(ACK_LOG_KEY, JSON.stringify(ackLog));
+  } catch (err) {
+    console.warn('Could not save acknowledgment log to localStorage (it will not survive a reload):', err);
+  }
+}
+
+let ackLog = loadAckLog();
+
+function appendAckLogEntry(entry) {
+  ackLog.unshift(entry);
+  saveAckLog();
+}
+
+function csvEscape(val) {
+  const s = String(val == null ? '' : val);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function ackReportRows() {
+  return ackLog.filter(e => e.action === 'Acknowledged');
+}
+
+function downloadAckReportCsv() {
+  const rows = ackReportRows();
+  const header = ['TU', 'Alarm code', 'Message', 'AteneaTimestamp', 'Acknowledged at'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(e => {
+    lines.push([e.tu, e.alert_code, e.alert_message, e.atenea_timestamp || '', e.at].map(csvEscape).join(','));
+  });
+  downloadBlob(`aor_fleet_ack_report_${timestampForFilename()}.csv`, 'text/csv', lines.join('\r\n'));
+}
+
+function initAckReportModal() {
+  document.getElementById('ackReportBtn').addEventListener('click', openAckReportModal);
+  document.getElementById('ackReportClose').addEventListener('click', closeAckReportModal);
+  document.getElementById('ackReportOverlay').addEventListener('click', e => {
+    if (e.target.id === 'ackReportOverlay') closeAckReportModal();
+  });
+}
+
+function openAckReportModal() {
+  renderAckReportBody();
+  document.getElementById('ackReportOverlay').hidden = false;
+}
+
+function closeAckReportModal() {
+  document.getElementById('ackReportOverlay').hidden = true;
+}
+
+function renderAckReportBody() {
+  const body = document.getElementById('ackReportBody');
+  const rows = ackReportRows();
+  let html = `<p style="color:var(--ink-muted);font-size:13px;margin:0 0 14px">
+    ${rows.length} acknowledgment${rows.length === 1 ? '' : 's'} logged in this browser — local register, kept in localStorage.
+  </p>`;
+  html += '<div class="manage-list" style="margin-top:0;border-top:none;padding-top:0;max-height:340px;overflow-y:auto">';
+  if (!rows.length) {
+    html += '<div class="manage-empty">No faults have been acknowledged yet.</div>';
+  } else {
+    html += rows.map(e => `
+      <div class="manage-row">
+        <span class="mr-tu">${escapeHtml(e.tu)}</span>
+        <span class="mr-desc">${escapeHtml(e.alert_code || '')}${e.alert_message ? ' — ' + escapeHtml(e.alert_message) : ''}${e.atenea_timestamp ? ` <span style="opacity:.6">(alarm: ${escapeHtml(formatAteneaTimestamp(e.atenea_timestamp))})</span>` : ''}</span>
+        <span class="mr-desc" style="flex:none;color:var(--ink-dim)">${escapeHtml(new Date(e.at).toLocaleString())}</span>
+      </div>`
+    ).join('');
+  }
+  html += '</div>';
+  html += `<div class="modal-actions" style="margin-top:16px">
+    <button class="btn btn-ack" id="ackReportDownloadBtn"${rows.length ? '' : ' disabled'}>Download CSV</button>
+  </div>`;
+  body.innerHTML = html;
+  const dlBtn = document.getElementById('ackReportDownloadBtn');
+  if (dlBtn) dlBtn.addEventListener('click', downloadAckReportCsv);
+}
+
+/*
+ * ── MANUAL OVERRIDES (local only, not Back4App) ─────────────────────────
+ * Lets someone flag a unit as "review required" by hand — independent of
+ * both the roster and any live Back4App data — with a short description.
+ * Stored in this browser's localStorage only, keyed by TU, so it survives
+ * reloads of this panel on THIS device but isn't written to Back4App and
+ * isn't shared with anyone viewing the panel elsewhere.
+ *
+ * "Out of service" USED to be settable here too, but is now backed by the
+ * TU_Status Back4App class instead (see "OUT OF SERVICE (TU_Status)" above
+ * and setTuStatusStop()) — the ⚙️ "Set unit status" button writes there
+ * directly once Back4App is configured, so it's visible on every device,
+ * not just this browser. manualOverrides still accepts an out_of_service
+ * entry as a LOCAL-ONLY fallback for trying the panel out without Back4App
+ * configured at all — see applyManualOverride() below for exactly when
+ * each source wins.
+ */
+const MANUAL_OVERRIDES_KEY = 'aor_fleet_manual_overrides_v1';
+
+function loadManualOverrides() {
+  try {
+    const raw = localStorage.getItem(MANUAL_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.warn('Could not read manual overrides from localStorage:', err);
+    return {};
+  }
+}
+
+function saveManualOverrides() {
+  try {
+    localStorage.setItem(MANUAL_OVERRIDES_KEY, JSON.stringify(manualOverrides));
+  } catch (err) {
+    console.warn('Could not save manual overrides to localStorage (they will not survive a reload):', err);
+  }
+}
+
+let manualOverrides = loadManualOverrides();
+
+function setManualOverride(tu, status, description) {
+  manualOverrides[tu] = { status, description: (description || '').trim(), setAt: new Date().toISOString() };
+  saveManualOverrides();
+}
+
+function clearManualOverride(tu) {
+  delete manualOverrides[tu];
+  saveManualOverrides();
+}
+
+/*
+ * ── PRECEDENCE for a unit's displayed status ─────────────────────────────
+ * Every unit passes through here on every render. In order:
+ *
+ * 1. A live TU_Status record with STOP=true (lastTuStatusByTu, populated by
+ *    loadFleet() from the TU_Status class) — Out of Service, REASON as the
+ *    description. Wins outright, over everything else, whenever Back4App
+ *    is configured and has a record for this TU.
+ * 2. Otherwise, a local review-required override (manualOverrides) — or,
+ *    only when Back4App ISN'T configured at all, a local out_of_service
+ *    override too (a fallback so the panel is still fully testable without
+ *    a live TU_Status class to point at).
+ * 3. Otherwise, `unit` unchanged — which by this point already reflects
+ *    either a roster-level out_of_service pin (data/units.js) or whatever
+ *    Live_Alarms says (see loadFleet()).
+ */
+function applyManualOverride(unit) {
+  const tuStatus = lastTuStatusByTu[unit.tu];
+  if (tuStatus && tuStatus.stop) {
+    return {
+      tu: unit.tu,
+      status: 'out_of_service',
+      raw_status: 'out_of_service',
+      alert_code: tuStatus.reason || 'Out of service',
+      alert_message: tuStatus.reason || '',
+      alarm_key: unit.alarm_key,
+      acknowledged: false,
+      manual: false,
+      tu_status: true,
+      tu_status_reason: tuStatus.reason || '',
+      tu_status_object_id: tuStatus.object_id,
+      alarms: unit.alarms || [], // preserved so the tooltip/modal can still list what's underneath
+      underlying: {
+        status: unit.status,
+        raw_status: unit.raw_status,
+        alert_code: unit.alert_code,
+        alert_message: unit.alert_message,
+        acknowledged: unit.acknowledged
+      }
+    };
+  }
+
+  const ov = manualOverrides[unit.tu];
+  const back4appConfigured = !!(BACK4APP_CONFIG.appId && BACK4APP_CONFIG.jsKey);
+  if (!ov || (ov.status === 'out_of_service' && back4appConfigured)) return { ...unit, manual: false };
+  return {
+    tu: unit.tu,
+    status: ov.status,
+    raw_status: ov.status,
+    alert_code: ov.description || (ov.status === 'out_of_service' ? 'Manually out of service' : 'Manually flagged for review'),
+    alert_message: ov.description || '',
+    alarm_key: unit.alarm_key,
+    acknowledged: false,
+    manual: true,
+    manual_description: ov.description || '',
+    manual_set_at: ov.setAt,
+    alarms: unit.alarms || [], // preserved so the tooltip/modal can still list what's underneath a manual override
+    underlying: {
+      status: unit.status,
+      raw_status: unit.raw_status,
+      alert_code: unit.alert_code,
+      alert_message: unit.alert_message,
+      acknowledged: unit.acknowledged
+    }
+  };
+}
+
+/*
+ * ── DAILY RESET (manual only — 🔄 "Reset Alarms" header button) ──────────
+ * No automatic midnight timer and no catch-up-on-load: this only ever runs
+ * when someone clicks "Reset Alarms" in the header, and only after they
+ * confirm the warning dialog. On Accept, in order:
+ *
+ *   1. Every alarm currently held for every unit — acknowledged AND not —
+ *      is written to one CSV (aor_fleet_daily_reset_<timestamp>.csv), one
+ *      row per alarm, so there's a complete audit record of exactly what
+ *      existed at the moment of the reset, before anything changes.
+ *   2. Every one of those alarms belonging to a unit that is NOT Out of
+ *      Service gets `acknowledged: true` written straight to its
+ *      Live_Alarms record — same PUT handleAcknowledge() uses, just run
+ *      across every matching record instead of one. Out of Service units'
+ *      alarms are left exactly as they are (untouched, not even read for
+ *      the write) — preserving the "except out of service" rule from how
+ *      this button was originally specified, since nothing said to change
+ *      that here. A unit manually flagged "review required" (no
+ *      Live_Alarms record behind it) has that override cleared instead,
+ *      for the same "back to healthy" effect.
+ *
+ * Every acknowledgment (and manual-override clear) this performs is also
+ * logged to the acknowledgment register (aor_fleet_ack_log_v1), tagged
+ * "(daily reset)" so it's distinguishable from a one-off manual click in
+ * the 🧾 Acknowledgment report. See README.md -> "Daily reset".
+ */
+let dailyResetInFlight = false; // guards against a double-click re-entering mid-run
+
+function downloadDailyResetAlarmsCsv(units) {
+  const snapshotAt = new Date().toISOString();
+  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'AteneaTimestamp', 'Acknowledged', 'Object ID'];
+  const lines = [header.map(csvEscape).join(',')];
+  units.forEach(u => {
+    (u.alarms || []).forEach(a => {
+      lines.push([
+        u.tu,
+        STATUS_LABEL[u.status] || u.status,
+        STATUS_LABEL[a.status] || a.status,
+        a.alert_code || '',
+        a.alert_message || '',
+        a.atenea_timestamp || '',
+        a.acknowledged ? 'Yes' : 'No',
+        a.object_id || ''
+      ].map(csvEscape).join(','));
+    });
+  });
+  downloadBlob(`aor_fleet_daily_reset_${timestampForFilename()}.csv`, 'text/csv', lines.join('\r\n'));
+  return lines.length - 1; // row count, excluding the header
+}
+
+// Same acknowledge path handleAcknowledge() uses (persists to Back4App when
+// configured, falls back to a session-only localAckOverrides entry when
+// not) so a daily-reset acknowledgment behaves identically to a manual one.
+async function acknowledgeAlarmForDailyReset(tu, alarm) {
+  const result = await updateLiveAlarmAcknowledged(alarm.object_id, true);
+  if (!result.persisted) {
+    const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
+    localAckOverrides[tu + '|' + alarmKey] = true;
+  }
+  appendAckLogEntry({
+    tu,
+    alarm_key: alarm.alarm_key || '',
+    alert_code: alarm.alert_code || '',
+    alert_message: alarm.alert_message || '',
+    atenea_timestamp: alarm.atenea_timestamp || '',
+    action: 'Acknowledged (daily reset)',
+    at: new Date().toISOString(),
+    persisted: result.persisted
+  });
+}
+
+async function runDailyReset() {
+  if (dailyResetInFlight) return;
+
+  const units = Object.values(lastUnitsByTu);
+  if (!units.length) return; // nothing rendered yet to snapshot/reset against
+
+  dailyResetInFlight = true;
+  try {
+    const rowCount = downloadDailyResetAlarmsCsv(units);
+
+    let acknowledgedCount = 0;
+    let clearedManualCount = 0;
+    const oosCount = units.filter(u => u.status === 'out_of_service').length;
+
+    for (const u of units) {
+      if (u.status === 'out_of_service') continue; // left exactly as-is — alarms untouched, nothing written
+
+      if (u.manual && u.status === 'review') {
+        clearManualOverride(u.tu);
+        appendAckLogEntry({
+          tu: u.tu,
+          alarm_key: u.alarm_key || '',
+          alert_code: u.alert_code || '',
+          alert_message: u.alert_message || '',
+          atenea_timestamp: '', // no live alarm behind a manual "review required" clear
+          action: 'Cleared (daily reset)',
+          at: new Date().toISOString(),
+          persisted: true
+        });
+        clearedManualCount++;
+        continue;
+      }
+
+      for (const alarm of (u.alarms || [])) {
+        try {
+          await acknowledgeAlarmForDailyReset(u.tu, alarm);
+          acknowledgedCount++;
+        } catch (err) {
+          console.warn(`Daily reset: failed to acknowledge an alarm on ${u.tu}:`, err);
+        }
+      }
+    }
+
+    console.log(
+      `Daily reset: ${rowCount} alarm(s) written to the CSV snapshot, ${acknowledgedCount} alarm(s) ` +
+      `acknowledged=true, ${clearedManualCount} manual "review required" override(s) cleared, ${oosCount} ` +
+      `out-of-service unit(s) left untouched.`
+    );
+    await loadFleet();
+  } finally {
+    dailyResetInFlight = false;
+  }
+}
+
+function initDailyResetButton() {
+  document.getElementById('dailyResetBtn').addEventListener('click', () => {
+    const ok = confirm(
+      'Run the daily reset now?\n\n' +
+      'This will download a CSV of every current alarm (acknowledged and not), then set ' +
+      'acknowledged = true on every one of those alarms in Live_Alarms — except alarms belonging to ' +
+      'Out of Service units, which are left untouched.\n\nThis cannot be undone from here. Continue?'
+    );
+    if (!ok) return;
+    runDailyReset().catch(err => {
+      console.error('Daily reset failed:', err);
+      alert('Daily reset failed: ' + (err && err.message ? err.message : err));
+    });
+  });
+}
+
+function pickField(record, candidates) {
+  for (const key of candidates) {
+    const v = record[key];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return undefined;
+}
+
+function classifySeverity(sevRaw) {
+  const s = String(sevRaw == null ? '' : sevRaw).trim().toUpperCase();
+  if (s === 'L1') return 'failure';
+  if (s === 'MA') return 'maintenance';
+  return 'review'; // L2, L3, anything else unrecognized, or no readable severity at all
+}
+
+// Treats a flag value of "off" (any case), false, or 0 as suppressed.
+// A record with no flag field at all is NOT suppressed — only an explicit
+// "off" hides an alarm, so a schema without this field just shows everyone.
+function isFlagOff(rec) {
+  const v = pickField(rec, LIVE_ALARMS_FIELDS.flag);
+  if (v === undefined) return false;
+  if (v === false || v === 0) return true;
+  return String(v).trim().toLowerCase() === 'off';
+}
+
+// Tolerant boolean read for the `acknowledged` field on a Live_Alarms
+// record — true / "true" / 1 all count, everything else is false.
+function isAcknowledgedTrue(rec) {
+  const v = pickField(rec, LIVE_ALARMS_FIELDS.acknowledged);
+  if (v === undefined) return false;
+  if (v === true || v === 1) return true;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
+// Tolerant boolean read for the `STOP` field on a TU_Status record —
+// true / "true" / 1 all count, everything else (including missing) is
+// false, i.e. not out of service.
+function isStopTrue(rec) {
+  const v = pickField(rec, TU_STATUS_FIELDS.stop);
+  if (v === undefined) return false;
+  if (v === true || v === 1) return true;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
+// A raw Parse REST fetch returns a Date field as { __type: "Date", iso:
+// "..." } rather than a plain string — this reads AteneaTimestamp either
+// way and normalizes it down to a plain ISO string for storage (in the
+// unit/alarm objects, the ack log, and CSV rows). '' when absent/unreadable.
+function normalizeAteneaTimestamp(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object' && typeof v.iso === 'string') return v.iso;
+  return '';
+}
+
+// Display formatting for the ISO string normalizeAteneaTimestamp() produces
+// — used anywhere AteneaTimestamp is shown on screen (not in CSVs, which
+// keep the plain ISO string so it stays a clean sortable value in a
+// spreadsheet). '—' when there's nothing to show or it doesn't parse.
+function formatAteneaTimestamp(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+}
+
+async function fetchLiveAlarms() {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return null; // not configured — fully disabled
+  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000', {
+    headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
+  });
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
+  const body = await res.json();
+  return body.results || [];
+}
+
+async function fetchTuStatus() {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return null; // not configured — fully disabled
+  const res = await fetch('https://parseapi.back4app.com/classes/TU_Status?limit=1000', {
+    headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
+  });
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
+  const body = await res.json();
+  return body.results || [];
+}
+
+/*
+ * ── ACKNOWLEDGING FAULTS ─────────────────────────────────────────────────
+ * Acknowledgment is written straight onto the SAME Live_Alarms record the
+ * alarm itself came from — a plain PUT setting its `acknowledged` field —
+ * rather than into a separate class. Live_Alarms is not replaced/recreated
+ * out from under it, so that field sticks on that record until something
+ * explicitly changes it again.
+ */
+async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey || !objectId) return { persisted: false }; // demo/local-only mode, or no live record to write to
+
+  const headers = {
+    'X-Parse-Application-Id': appId,
+    'X-Parse-JavaScript-Key': jsKey,
+    'Content-Type': 'application/json'
+  };
+  const res = await fetch(`https://parseapi.back4app.com/classes/Live_Alarms/${objectId}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ acknowledged })
+  });
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new Error(`Back4App HTTP ${res.status} (update)${bodyText ? ' — ' + bodyText : ''}`);
+  }
+  return { persisted: true };
+}
+
+/*
+ * ── SETTING / CLEARING OUT OF SERVICE (TU_Status) ────────────────────────
+ * Upsert, since unlike an alarm (which always has a pre-existing Live_Alarms
+ * record to act on) a unit going out of service for the first time may have
+ * no TU_Status row yet: PUT to the existing record when `existingObjectId`
+ * is given (from lastTuStatusByTu[tu].object_id), otherwise POST to create
+ * one. Clearing calls this the same way with stop=false — it flips STOP
+ * back off on the existing record rather than deleting it, the same way
+ * un-acknowledging flips `acknowledged` back off on a Live_Alarms record —
+ * so REASON stays as history instead of being thrown away.
+ */
+async function setTuStatusStop(tu, stop, reason, existingObjectId) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return { persisted: false }; // demo/local-only mode
+
+  const headers = {
+    'X-Parse-Application-Id': appId,
+    'X-Parse-JavaScript-Key': jsKey,
+    'Content-Type': 'application/json'
+  };
+  const payload = { STOP: stop, REASON: reason || '' };
+
+  let res;
+  if (existingObjectId) {
+    res = await fetch(`https://parseapi.back4app.com/classes/TU_Status/${existingObjectId}`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(payload)
+    });
+  } else {
+    res = await fetch('https://parseapi.back4app.com/classes/TU_Status', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ TU: tu, ...payload })
+    });
+  }
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new Error(`Back4App HTTP ${res.status} (${existingObjectId ? 'update' : 'create'})${bodyText ? ' — ' + bodyText : ''}`);
+  }
+  const body = await res.json().catch(() => ({}));
+  return { persisted: true, object_id: existingObjectId || body.objectId };
+}
+
+async function loadFleet() {
+  hideLiveWarning();
+
+  let roster;
+  if (window.__FLEET_DATA__) {
+    roster = window.__FLEET_DATA__;
+  } else {
+    try {
+      const res = await fetch(DATA_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      roster = await res.json();
+      hideLoadError();
+    } catch (err) {
+      showLoadError(err);
+      return;
+    }
+  }
+
+  let liveRecords = null;
+  try {
+    liveRecords = await fetchLiveAlarms();
+  } catch (err) {
+    console.warn('Back4App fetch failed, falling back to roster data:', err);
+  }
+
+  // TU_Status (Out of Service) is fetched independently of Live_Alarms and
+  // applied the same way regardless of which branch below ends up running
+  // — lastTuStatusByTu is read by applyManualOverride() for every unit, in
+  // both the full-live path and the applyLocalAckToRoster() fallback paths.
+  let tuStatusRecords = null;
+  try {
+    tuStatusRecords = await fetchTuStatus();
+  } catch (err) {
+    console.warn('Back4App TU_Status fetch failed, Out of Service status may be stale:', err);
+  }
+  const tuStatusByTu = {};
+  let tuStatusUnmatched = 0;
+  (tuStatusRecords || []).forEach(rec => {
+    const tu = pickField(rec, TU_STATUS_FIELDS.tu);
+    if (!tu) { tuStatusUnmatched++; return; }
+    tuStatusByTu[tu] = {
+      stop: isStopTrue(rec),
+      reason: pickField(rec, TU_STATUS_FIELDS.reason) || '',
+      object_id: rec.objectId
+    };
+  });
+  if (tuStatusUnmatched) {
+    console.warn(`${tuStatusUnmatched} of ${(tuStatusRecords || []).length} fetched TU_Status record(s) had no readable "TU" field (tried: ${TU_STATUS_FIELDS.tu.join(', ')}) and were skipped.`);
+  }
+  lastTuStatusByTu = tuStatusByTu;
+
+  if (!liveRecords) {
+    render(applyLocalAckToRoster(roster));
+    return;
+  }
+
+  // byTu now collects an ARRAY of alarms per TU (a unit can have more than
+  // one active Live_Alarms record at once) rather than overwriting down to
+  // a single "worst" one — see "MULTIPLE ALARMS PER UNIT" above.
+  const byTu = {};
+  let unmatched = 0;
+  let flaggedOffCount = 0;
+  liveRecords.forEach(rec => {
+    const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
+    if (!tu) { unmatched++; return; }
+    if (isFlagOff(rec)) { flaggedOffCount++; return; } // suppressed — treat as if this alarm doesn't exist
+    const status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity));
+    const entry = {
+      status,
+      alert_code: pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'Active alarm',
+      alert_message: pickField(rec, LIVE_ALARMS_FIELDS.message) || '',
+      alarm_key: pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'alarm',
+      object_id: rec.objectId,
+      acknowledged: isAcknowledgedTrue(rec),
+      atenea_timestamp: normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp))
+    };
+    if (!byTu[tu]) byTu[tu] = [];
+    byTu[tu].push(entry);
+  });
+
+  if (liveRecords.length && unmatched === liveRecords.length) {
+    console.warn('None of the fetched Live_Alarms records matched LIVE_ALARMS_FIELDS.tu. Sample record:', liveRecords[0]);
+    showLiveWarning(
+      'Connected to Back4App, but couldn’t find the train-unit field on any fetched Live_Alarms record ' +
+      '(tried: <code>' + LIVE_ALARMS_FIELDS.tu.join('</code>, <code>') + '</code>). ' +
+      'Showing roster data instead — check LIVE_ALARMS_FIELDS in index.html against your Live_Alarms schema ' +
+      '(a sample record was logged to the browser console).'
+    );
+    render(applyLocalAckToRoster(roster));
+    return;
+  }
+
+  /*
+   * ── DIAGNOSTICS FOR "SOME OF MY DATA ISN'T SHOWING" ──────────────────
+   * These three situations all silently drop a Live_Alarms record without
+   * an error — by design (an unmatched TU shouldn't take down the whole
+   * panel the way the "unmatched === everything" case above does), but
+   * silent is exactly what makes "I have data in the database that isn't
+   * displaying" hard to self-diagnose. Surfaced here instead: a console
+   * warning always, and a banner for the most common real cause (a TU
+   * Back4App knows about that isn't in the local roster).
+   */
+  if (unmatched > 0 && unmatched < liveRecords.length) {
+    console.warn(`${unmatched} of ${liveRecords.length} fetched Live_Alarms record(s) had no readable "tu" field (tried: ${LIVE_ALARMS_FIELDS.tu.join(', ')}) and were skipped.`);
+  }
+  if (flaggedOffCount) {
+    console.log(`${flaggedOffCount} Live_Alarms record(s) suppressed this refresh because their "flag" field is off.`);
+  }
+  const rosterTus = new Set((roster.units || []).map(u => u.tu));
+  const unknownTus = Object.keys(byTu).filter(tu => !rosterTus.has(tu));
+  if (unknownTus.length) {
+    console.warn(
+      `${unknownTus.length} Live_Alarms record(s) matched a TU that isn't in the current roster (data/units.js) ` +
+      `and are NOT shown on any tile: ${unknownTus.join(', ')}. Check for a typo/casing/whitespace difference ` +
+      `between Back4App's "tu" field and data/units.js, or add the unit to data/units.js if it's genuinely new.`
+    );
+    showLiveWarning(
+      `Connected to Back4App — ${unknownTus.length} alarm(s) reference a unit not in the current roster and ` +
+      `aren't shown on any tile: <code>${unknownTus.map(escapeHtml).join('</code>, <code>')}</code>. Check for a ` +
+      `typo/casing mismatch against <code>data/units.js</code>, or add the unit there if it's genuinely new ` +
+      `(same list logged to the browser console).`
+    );
+  }
+
+  // A fourth silent-drop case, distinct from the three above: a live
+  // record that DID match a roster TU and DID have a real fault, but is
+  // rendering Healthy anyway because every one of that unit's alarms
+  // already has acknowledged=true (see "ACKNOWLEDGING FAULTS" below —
+  // that flag now lives directly on each record). This is everyday/
+  // expected behavior (that's what acknowledging is for), so it doesn't
+  // get a banner, but it's exactly what "flag is on but it's not showing"
+  // usually turns out to be, so it's worth a console line to make that
+  // checkable in seconds.
+  const suppressedByAck = [];
+
+  const mergedUnits = (roster.units || []).map(u => {
+    let unit;
+    if (u.status === 'out_of_service') {
+      unit = { tu: u.tu, status: 'out_of_service', raw_status: 'out_of_service', acknowledged: false, alarms: [] };
+    } else {
+      const alarms = byTu[u.tu] || [];
+      if (!alarms.length) {
+        unit = { tu: u.tu, status: 'healthy', raw_status: 'healthy', acknowledged: false, alarms: [] };
+      } else {
+        const worst = pickWorstActiveAlarm(alarms);
+        if (worst) {
+          unit = {
+            tu: u.tu,
+            status: worst.status,
+            raw_status: worst.status,
+            alert_code: worst.alert_code,
+            alert_message: worst.alert_message,
+            alarm_key: worst.alarm_key,
+            object_id: worst.object_id,
+            acknowledged: false,
+            atenea_timestamp: worst.atenea_timestamp,
+            alarms
+          };
+        } else {
+          // every alarm on this unit is acknowledged — healthy, but keep the
+          // "representative" alarm's own detail around for the modal/tooltip
+          suppressedByAck.push(u.tu);
+          const rep = alarms[0];
+          unit = {
+            tu: u.tu,
+            status: 'healthy',
+            raw_status: rep.status,
+            alert_code: rep.alert_code,
+            alert_message: rep.alert_message,
+            alarm_key: rep.alarm_key,
+            object_id: rep.object_id,
+            acknowledged: true,
+            atenea_timestamp: rep.atenea_timestamp,
+            alarms
+          };
+        }
+      }
+    }
+    return applyManualOverride(unit);
+  });
+
+  if (suppressedByAck.length) {
+    console.log(
+      `${suppressedByAck.length} unit(s) have active Live_Alarms fault(s) but show Healthy because every ` +
+      `one of their alarms has acknowledged=true: ${suppressedByAck.join(', ')}. Click the tile (look for a ` +
+      `small ✓ badge on it) to see the real status, or Un-acknowledge there to show it as red/amber/blue again.`
+    );
+  }
+
+  render({ units: mergedUnits, _meta: { generated: new Date().toISOString() } });
+
+  if (!liveRefreshTimer) liveRefreshTimer = setInterval(loadFleet, LIVE_REFRESH_MS);
+}
+
+function applyLocalAckToRoster(roster) {
+  const units = (roster.units || []).map(u => {
+    const alarmKey = u.alert_code || u.status;
+    const acknowledged = !!localAckOverrides[u.tu + '|' + alarmKey];
+    const hasFault = u.status === 'failure' || u.status === 'review' || u.status === 'maintenance';
+    // Demo/no-Back4App roster entries only ever carry one status each (no
+    // severity concept locally) — still wrapped as a 1-item alarms array so
+    // the tooltip/modal/daily-reset CSV code has one shape to work with
+    // regardless of where the data came from.
+    const alarms = hasFault ? [{
+      status: u.status,
+      alert_code: u.alert_code || '',
+      alert_message: u.alert_message || '',
+      alarm_key: alarmKey,
+      object_id: null,
+      acknowledged
+    }] : [];
+    const unit = {
+      ...u,
+      raw_status: u.status,
+      status: suppressIfAcknowledged(u.status, acknowledged),
+      alarm_key: alarmKey,
+      acknowledged,
+      alarms
+    };
+    return applyManualOverride(unit);
+  });
+  return { units, _meta: roster._meta };
+}
+
+function showLiveWarning(html) {
+  const el = document.getElementById('liveWarning');
+  el.style.display = 'block';
+  el.innerHTML = html;
+}
+function hideLiveWarning() {
+  document.getElementById('liveWarning').style.display = 'none';
+}
+
+function hideLoadError() {
+  document.getElementById('loadError').style.display = 'none';
+}
+
+function showLoadError(err) {
+  const el = document.getElementById('loadError');
+  el.style.display = 'block';
+  el.innerHTML =
+    'Could not load <code>' + DATA_URL + '</code> (' + escapeHtml(String(err.message || err)) + '), and ' +
+    '<code>data/units.js</code> was not found either.<br>' +
+    'If you opened this file directly (<code>file://</code>) and deleted/renamed <code>data/units.js</code>, ' +
+    'either restore it or serve the folder instead, e.g. <code>python3 -m http.server</code> from inside ' +
+    '<code>fleet-status-panel/</code>, or open it from wherever this panel is embedded in the dashboard.';
+}
+
+function render(json) {
+  const units = json.units || [];
+  const isDemo = !!(json._meta && json._meta.source);
+
+  // Play the alarm tone if any unit's displayed status differs from the
+  // previous render — skipped on the very first render (nothing to compare
+  // against yet, so opening the panel with existing faults stays silent).
+  const newStatusByTu = {};
+  units.forEach(u => { newStatusByTu[u.tu] = u.status; });
+  if (previousStatusByTu) {
+    const changed = Object.keys(newStatusByTu).some(tu => newStatusByTu[tu] !== previousStatusByTu[tu]);
+    if (changed) playAlarmTone();
+  }
+  previousStatusByTu = newStatusByTu;
+
+  lastUnitsByTu = {};
+  units.forEach(u => { lastUnitsByTu[u.tu] = u; });
+
+  document.getElementById('demoFlagInline').innerHTML = isDemo
+    ? '<span class="demo-flag">Demo data</span>'
+    : '';
+
+  const counts = { healthy: 0, review: 0, failure: 0, maintenance: 0, out_of_service: 0 };
+  units.forEach(u => { if (counts[u.status] !== undefined) counts[u.status]++; });
+
+  const badgeMeta = [
+    ['failure', 'In failure'],
+    ['review', 'Review required'],
+    ['maintenance', 'Maintenance Alert'],
+    ['out_of_service', 'Out of service'],
+    ['healthy', 'Healthy']
+  ];
+  document.getElementById('badges').innerHTML = badgeMeta.map(([key, label]) =>
+    `<div class="badge"><span class="dot ${STATUS_DOT_CLASS[key]}"></span>${label} <span class="count">${counts[key]}</span></div>`
+  ).join('');
+
+  document.getElementById('kpiBottom').innerHTML = badgeMeta.map(([key, label]) => `
+    <div class="kpi-card ${key}">
+      <div class="kpi-label"><span class="dot ${STATUS_DOT_CLASS[key]}"></span>${label}</div>
+      <div class="kpi-value">${counts[key]}</div>
+    </div>`
+  ).join('');
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = units.map(u => {
+    const label = STATUS_LABEL[u.status] || u.status;
+    const ackSuffix = u.acknowledged ? ' (acknowledged)' : '';
+    const manualSuffix = u.manual ? ' (manually set)' : '';
+    // Every alarm this unit has (not just the "worst" one driving the tile
+    // color) is embedded here as JSON, so the hover tooltip can list all of
+    // them — see attachTooltips() below. HTML-escaped like the other data-*
+    // attributes so it round-trips safely through the attribute value.
+    const alarmsJson = escapeAttr(JSON.stringify((u.alarms || []).map(a => ({
+      status: a.status, code: a.alert_code || '', msg: a.alert_message || '', ack: !!a.acknowledged
+    }))));
+    return `<div class="tile ${escapeAttr(u.status)}" role="listitem" tabindex="0"
+      data-tu="${escapeAttr(u.tu)}" data-status="${escapeAttr(u.status)}"
+      data-code="${escapeAttr(u.alert_code || '')}" data-msg="${escapeAttr(u.alert_message || '')}"
+      data-ack="${u.acknowledged ? '1' : '0'}" data-manual="${u.manual ? '1' : '0'}"
+      data-alarms="${alarmsJson}"
+      aria-label="${escapeAttr(u.tu)} — ${escapeAttr(label)}${ackSuffix}${manualSuffix}${u.alert_message ? ': ' + escapeAttr(u.alert_message) : ''}. Press Enter for details.">
+      ${escapeHtml(u.tu)}${u.acknowledged ? '<span class="ack-badge" title="Acknowledged">✓</span>' : ''}${u.manual ? '<span class="manual-badge" title="Manually set">⚑</span>' : ''}
+    </div>`;
+  }).join('');
+
+  if (!grid.dataset.interactionsAttached) {
+    attachTooltips(grid);
+    attachGridInteractions(grid);
+    grid.dataset.interactionsAttached = '1';
+  }
+
+  const unitList = document.getElementById('unitList');
+  if (unitList) unitList.innerHTML = units.map(u => `<option value="${escapeAttr(u.tu)}"></option>`).join('');
+
+  const alerts = units.filter(u => u.status === 'failure' || u.status === 'review' || u.status === 'maintenance');
+  document.getElementById('alertCount').textContent = alerts.length;
+  document.getElementById('unitCount').textContent = units.length;
+
+  const ticker = document.getElementById('ticker');
+  if (!alerts.length) {
+    ticker.innerHTML = '<span class="empty">No active alerts.</span>';
+  } else {
+    ticker.innerHTML = alerts.map((u, i) => {
+      const sep = i < alerts.length - 1 ? '<span class="sep">·</span>' : '';
+      return `<span class="alert-item ${escapeAttr(u.status)}"><span class="tu">${escapeHtml(u.tu)}</span> — ${escapeHtml(u.alert_code || '')}</span>${sep}`;
+    }).join('');
+  }
+
+  const footer = document.getElementById('footer');
+  footer.textContent = isDemo ? '' : `Fleet data as of ${new Date().toLocaleString()}.`;
+
+  // Kept in sync with the tile grid on every render, regardless of which
+  // tab is currently visible — see "TABS (Tiles / List)" below.
+  renderAlarmList(units);
+}
+
+/*
+ * ── TABS (Tiles / List) ───────────────────────────────────────────────────
+ * "Tiles" is the original annunciator grid (unchanged). "List" is a flat
+ * table of every alarm on every unit — acknowledged AND not acknowledged —
+ * one row per alarm (a unit with two active alarms gets two rows), so it's
+ * the one place to see everything at once rather than hovering tile by
+ * tile. Both tabs render from the same lastUnitsByTu on every poll, so
+ * switching tabs never shows stale data. Clicking a row opens that unit's
+ * usual detail modal (openUnitModal) — the same acknowledge/un-acknowledge
+ * actions available from a tile are available from a list row.
+ */
+let activeTab = (() => {
+  try { return localStorage.getItem('aor_fleet_active_tab_v1') || 'tiles'; } catch (err) { return 'tiles'; }
+})();
+let alarmListFilter = 'all'; // 'all' | 'ack' | 'unack'
+
+function initTabs() {
+  const tabs = [
+    { key: 'tiles', btn: 'tabBtnTiles', panel: 'tabPanelTiles' },
+    { key: 'list', btn: 'tabBtnList', panel: 'tabPanelList' }
+  ];
+  function apply() {
+    tabs.forEach(t => {
+      const isActive = t.key === activeTab;
+      document.getElementById(t.btn).setAttribute('aria-selected', isActive ? 'true' : 'false');
+      document.getElementById(t.panel).hidden = !isActive;
+    });
+  }
+  tabs.forEach(t => {
+    document.getElementById(t.btn).addEventListener('click', () => {
+      activeTab = t.key;
+      try { localStorage.setItem('aor_fleet_active_tab_v1', activeTab); } catch (err) { /* ignore */ }
+      apply();
+    });
+  });
+  apply();
+}
+
+function renderAlarmList(units) {
+  const wrap = document.getElementById('alarmListWrap');
+  if (!wrap) return;
+
+  const rows = [];
+  units.forEach(u => {
+    (u.alarms || []).forEach(a => {
+      rows.push({ tu: u.tu, unitStatus: u.status, ...a });
+    });
+  });
+
+  const ackCount = rows.filter(r => r.acknowledged).length;
+  const unackCount = rows.length - ackCount;
+  const filtered = rows.filter(r =>
+    alarmListFilter === 'all' ? true : alarmListFilter === 'ack' ? r.acknowledged : !r.acknowledged
+  );
+  // Worst/most-urgent-first, then newest-looking (unacknowledged) before
+  // acknowledged within the same severity, then alphabetical by TU.
+  filtered.sort((a, b) =>
+    (SEVERITY_PRIORITY[b.status] || 0) - (SEVERITY_PRIORITY[a.status] || 0) ||
+    Number(a.acknowledged) - Number(b.acknowledged) ||
+    a.tu.localeCompare(b.tu)
+  );
+
+  const filterBtn = (key, label) =>
+    `<button data-filter="${key}" aria-pressed="${alarmListFilter === key ? 'true' : 'false'}">${label}</button>`;
+
+  let html = `<div class="alarm-table-head">
+    <div class="alarm-table-summary">
+      <strong>${rows.length}</strong> alarm${rows.length === 1 ? '' : 's'} total ·
+      <strong>${unackCount}</strong> not acknowledged · <strong>${ackCount}</strong> acknowledged
+    </div>
+    <div class="alarm-table-actions">
+      <div class="alarm-filter">
+        ${filterBtn('all', 'All')}
+        ${filterBtn('unack', 'Not acknowledged')}
+        ${filterBtn('ack', 'Acknowledged')}
+      </div>
+      <button class="btn-manual" id="alarmListExportBtn" type="button" ${filtered.length ? '' : 'disabled'}
+        title="Downloads the ${filtered.length} row(s) currently shown below (respects the active filter)">💾 Export CSV</button>
+    </div>
+  </div>`;
+
+  if (!filtered.length) {
+    html += `<div class="alarm-table-scroll"><div class="alarm-table-empty">${
+      rows.length ? 'No alarms match this filter.' : 'No alarms currently held for any unit.'
+    }</div></div>`;
+  } else {
+    html += `<div class="alarm-table-scroll"><table class="alarm-table">
+      <thead><tr>
+        <th>TU</th><th>Severity</th><th>Alarm code</th><th>Message</th><th>Timestamp</th><th>Acknowledged</th>
+      </tr></thead>
+      <tbody>${filtered.map(r => `
+        <tr data-tu="${escapeAttr(r.tu)}" tabindex="0" role="button" aria-label="Open ${escapeAttr(r.tu)} details">
+          <td class="al-tu">${escapeHtml(r.tu)}</td>
+          <td><span class="al-sev"><span class="dot ${STATUS_DOT_CLASS[r.status] || ''}"></span>${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
+          <td>${escapeHtml(r.alert_code || '')}</td>
+          <td class="al-msg">${escapeHtml(r.alert_message || '')}</td>
+          <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(r.atenea_timestamp))}</td>
+          <td><span class="al-ack ${r.acknowledged ? 'yes' : 'no'}">${r.acknowledged ? 'Yes' : 'No'}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  }
+
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      alarmListFilter = btn.dataset.filter;
+      renderAlarmList(Object.values(lastUnitsByTu));
+    });
+  });
+  wrap.querySelectorAll('tbody tr').forEach(tr => {
+    tr.addEventListener('click', () => openUnitModal(tr.dataset.tu));
+    tr.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(tr.dataset.tu); }
+    });
+  });
+
+  const exportBtn = document.getElementById('alarmListExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', () => downloadAlarmListCsv(filtered));
+}
+
+// Exports whatever's currently on screen in the List tab (respects the
+// active All/Not acknowledged/Acknowledged filter and the same
+// worst-first sort order the table itself uses) — same CSV shape as the
+// daily reset's audit CSV (see "DAILY RESET" above) so the two are
+// consistent, just scoped to what's currently filtered/visible here.
+function downloadAlarmListCsv(rows) {
+  const snapshotAt = new Date().toISOString();
+  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'AteneaTimestamp', 'Acknowledged', 'Object ID', 'Exported at'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(r => {
+    lines.push([
+      r.tu,
+      STATUS_LABEL[r.unitStatus] || r.unitStatus,
+      STATUS_LABEL[r.status] || r.status,
+      r.alert_code || '',
+      r.alert_message || '',
+      r.atenea_timestamp || '',
+      r.acknowledged ? 'Yes' : 'No',
+      r.object_id || '',
+      snapshotAt
+    ].map(csvEscape).join(','));
+  });
+  const suffix = alarmListFilter === 'all' ? 'all' : alarmListFilter === 'ack' ? 'acknowledged' : 'not-acknowledged';
+  downloadBlob(`aor_fleet_alarm_list_${suffix}_${timestampForFilename()}.csv`, 'text/csv', lines.join('\r\n'));
+}
+
+function attachTooltips(grid) {
+  const tt = document.getElementById('tooltip');
+  let current = null;
+
+  function showFor(tile, x, y) {
+    const tu = tile.dataset.tu;
+    const status = tile.dataset.status;
+    const code = tile.dataset.code;
+    const msg = tile.dataset.msg;
+    const acked = tile.dataset.ack === '1';
+    const manual = tile.dataset.manual === '1';
+    const statusLabel = (STATUS_LABEL[status] || status) + (acked ? ' (acknowledged)' : '') + (manual ? ' (manually set)' : '');
+
+    let alarms = [];
+    try { alarms = JSON.parse(tile.dataset.alarms || '[]'); } catch (err) { alarms = []; }
+
+    let detailHtml;
+    if (alarms.length > 1) {
+      // Several alarms on this one unit — list every one of them (not just
+      // the worst, which is all the tile's own color can show) so hovering
+      // is how you find out a unit has more than a single active alarm.
+      detailHtml = `<ul class="tt-alarm-list">` + alarms.map(a => `
+        <li class="tt-alarm-item">
+          <span class="tt-alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}</span>
+          ${a.ack ? '<span class="tt-alarm-ack"> · acknowledged</span>' : ''}<br>
+          <strong>${escapeHtml(a.code || '')}</strong>${a.msg ? '<br>' + escapeHtml(a.msg) : ''}
+        </li>`).join('') + `</ul>`;
+    } else if (code) {
+      detailHtml = `<div class="tt-msg"><strong>${escapeHtml(code)}</strong><br>${escapeHtml(msg || '')}</div>`;
+    } else {
+      detailHtml = '';
+    }
+
+    tt.innerHTML =
+      `<div class="tt-tu">${escapeHtml(tu)}${alarms.length > 1 ? ` (${alarms.length} alarms)` : ''}</div>` +
+      `<div class="tt-status ${escapeAttr(status)}">${escapeHtml(statusLabel)}</div>` +
+      detailHtml +
+      `<div class="tt-msg" style="margin-top:6px;opacity:.7">Click for details</div>`;
+    positionTooltip(x, y);
+    tt.classList.add('show');
+    current = tile;
+  }
+
+  function hide() {
+    tt.classList.remove('show');
+    current = null;
+  }
+
+  function positionTooltip(x, y) {
+    const pad = 14;
+    let left = x + pad, top = y + pad;
+    const rect = tt.getBoundingClientRect();
+    if (left + rect.width > window.innerWidth - 8) left = x - rect.width - pad;
+    if (top + rect.height > window.innerHeight - 8) top = y - rect.height - pad;
+    tt.style.left = left + 'px';
+    tt.style.top = top + 'px';
+  }
+
+  grid.addEventListener('mousemove', e => {
+    const tile = e.target.closest('.tile');
+    if (!tile) { hide(); return; }
+    if (tile !== current) showFor(tile, e.clientX, e.clientY);
+    else positionTooltip(e.clientX, e.clientY);
+  });
+  grid.addEventListener('mouseleave', hide);
+
+  grid.addEventListener('focusin', e => {
+    const tile = e.target.closest('.tile');
+    if (!tile) return;
+    const rect = tile.getBoundingClientRect();
+    showFor(tile, rect.left + rect.width / 2, rect.top);
+  });
+  grid.addEventListener('focusout', hide);
+}
+
+function attachGridInteractions(grid) {
+  grid.addEventListener('click', e => {
+    const tile = e.target.closest('.tile');
+    if (tile) openUnitModal(tile.dataset.tu);
+  });
+  grid.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const tile = e.target.closest('.tile');
+    if (!tile) return;
+    e.preventDefault();
+    openUnitModal(tile.dataset.tu);
+  });
+
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  document.getElementById('modalOverlay').addEventListener('click', e => {
+    if (e.target.id === 'modalOverlay') closeModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    closeModal();
+    closeManageModal();
+  });
+}
+
+let modalTu = null;
+
+function openUnitModal(tu) {
+  modalTu = tu;
+  renderModalBody();
+  document.getElementById('modalOverlay').hidden = false;
+}
+
+function closeModal() {
+  modalTu = null;
+  document.getElementById('modalOverlay').hidden = true;
+}
+
+/*
+ * ── MANAGE MODAL (pick any unit, set/clear a manual override) ──────────
+ * Separate from the per-tile detail modal above: opened via the header's
+ * "Set unit status" button, or via "Set manually" / "Edit" inside a tile's
+ * own detail modal (which pre-selects that tile's TU here). Lists every
+ * currently-overridden unit so they're all visible and clearable in one
+ * place, not just discoverable one tile at a time.
+ */
+let manageSelectedTu = null;
+
+function initManageModal() {
+  document.getElementById('manualBtn').addEventListener('click', () => openManageModal());
+  document.getElementById('manageClose').addEventListener('click', closeManageModal);
+  document.getElementById('manageOverlay').addEventListener('click', e => {
+    if (e.target.id === 'manageOverlay') closeManageModal();
+  });
+}
+
+function openManageModal(prefillTu) {
+  manageSelectedTu = prefillTu || null;
+  renderManageBody();
+  document.getElementById('manageOverlay').hidden = false;
+  if (prefillTu) {
+    const input = document.getElementById('manageUnitInput');
+    if (input) input.focus();
+  } else {
+    setTimeout(() => { const i = document.getElementById('manageUnitInput'); if (i) i.focus(); }, 0);
+  }
+}
+
+function closeManageModal() {
+  document.getElementById('manageOverlay').hidden = true;
+}
+
+function renderManageBody() {
+  const body = document.getElementById('manageBody');
+  const tu = manageSelectedTu;
+  const localOv = tu ? manualOverrides[tu] : null;
+  const liveOos = tu ? lastTuStatusByTu[tu] : null;
+  const hasLiveOos = !!(liveOos && liveOos.stop);
+  const knownTu = tu && lastUnitsByTu[tu];
+  const back4appConfigured = !!(BACK4APP_CONFIG.appId && BACK4APP_CONFIG.jsKey);
+
+  // What's currently set for this TU, from whichever source is
+  // authoritative — see applyManualOverride() for the full precedence.
+  const existingStatus = hasLiveOos ? 'out_of_service' : (localOv ? localOv.status : null);
+  const existingDesc = hasLiveOos ? (liveOos.reason || '') : (localOv ? (localOv.description || '') : '');
+
+  let html = `<div class="form-row">
+    <label for="manageUnitInput">Unit</label>
+    <input type="text" id="manageUnitInput" list="unitList" placeholder="e.g. AM103" value="${escapeAttr(tu || '')}" autocomplete="off">
+  </div>`;
+
+  if (tu && !knownTu) {
+    html += `<div class="modal-error" style="margin-top:-6px">"${escapeHtml(tu)}" isn't in the current roster — check the code and try again.</div>`;
+  } else if (tu) {
+    html += `<div class="form-row">
+      <label>Status</label>
+      <div class="status-choice">
+        <label class="sel-review"><input type="radio" name="manageStatus" value="review" ${existingStatus !== 'out_of_service' ? 'checked' : ''}> Review required</label>
+        <label class="sel-oos"><input type="radio" name="manageStatus" value="out_of_service" ${existingStatus === 'out_of_service' ? 'checked' : ''}> Out of service</label>
+      </div>
+      ${back4appConfigured
+        ? '<div style="opacity:.7;font-size:.85em;margin-top:6px">Out of service is saved to Back4App (TU_Status) — visible on every device. Review required stays local to this browser.</div>'
+        : '<div style="opacity:.7;font-size:.85em;margin-top:6px">Back4App isn’t configured — both choices are local to this browser only (demo mode).</div>'}
+    </div>
+    <div class="form-row">
+      <label for="manageDesc">Description (optional)</label>
+      <textarea id="manageDesc" rows="2" maxlength="200" placeholder="Short note — why, and by whom, if useful">${escapeHtml(existingDesc)}</textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ack" id="manageSaveBtn" style="background:var(--focus);border-color:var(--focus);color:#03101f">
+        ${existingStatus ? 'Update' : 'Set status'}
+      </button>
+      ${existingStatus ? '<button class="btn btn-unack" id="manageClearBtn">Clear</button>' : ''}
+    </div>`;
+  }
+
+  // Bottom list: local overrides (review always; out_of_service only when
+  // Back4App isn't configured — see applyManualOverride()) plus every live
+  // TU_Status STOP=true record. A TU only ever shows up under one source at
+  // a time given that precedence, but both are consulted so nothing is
+  // silently left out of this list.
+  const rows = [];
+  Object.keys(manualOverrides).sort().forEach(t => {
+    const ov = manualOverrides[t];
+    if (ov.status === 'out_of_service' && back4appConfigured) return;
+    rows.push({ tu: t, status: ov.status, desc: ov.description || '', source: 'local' });
+  });
+  Object.keys(lastTuStatusByTu).sort().forEach(t => {
+    const st = lastTuStatusByTu[t];
+    if (!st.stop) return;
+    rows.push({ tu: t, status: 'out_of_service', desc: st.reason || '', source: 'tu_status' });
+  });
+  rows.sort((a, b) => a.tu.localeCompare(b.tu));
+
+  html += '<div class="manage-list"><h3>Currently set manually</h3>';
+  if (!rows.length) {
+    html += '<div class="manage-empty">No units are manually overridden.</div>';
+  } else {
+    html += rows.map(r => {
+      const label = STATUS_LABEL[r.status] || r.status;
+      const sourceTag = r.source === 'tu_status' ? ' <span style="opacity:.6;font-weight:400">(Back4App)</span>' : '';
+      return `<div class="manage-row">
+        <span class="mr-tu">${escapeHtml(r.tu)}</span>
+        <span class="mr-status ${escapeAttr(r.status)}">${escapeHtml(label)}${sourceTag}</span>
+        <span class="mr-desc">${escapeHtml(r.desc)}</span>
+        <button class="mr-clear" data-clear-tu="${escapeAttr(r.tu)}" data-clear-source="${r.source}">Clear</button>
+      </div>`;
+    }).join('');
+  }
+  html += '</div>';
+  html += '<div class="modal-error" id="manageError" hidden></div>';
+
+  body.innerHTML = html;
+
+  const input = document.getElementById('manageUnitInput');
+  input.addEventListener('change', () => {
+    manageSelectedTu = input.value.trim().toUpperCase();
+    renderManageBody();
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); manageSelectedTu = input.value.trim().toUpperCase(); renderManageBody(); }
+  });
+
+  const saveBtn = document.getElementById('manageSaveBtn');
+  if (saveBtn) saveBtn.addEventListener('click', () => handleManageSave(tu));
+  const clearBtn = document.getElementById('manageClearBtn');
+  if (clearBtn) clearBtn.addEventListener('click', () => handleManageClear(tu, hasLiveOos ? 'tu_status' : 'local'));
+  body.querySelectorAll('[data-clear-tu]').forEach(btn => {
+    btn.addEventListener('click', () => handleManageClear(btn.dataset.clearTu, btn.dataset.clearSource));
+  });
+}
+
+// Saving "Out of service" while Back4App is configured writes straight to
+// TU_Status (upsert — see setTuStatusStop()); everything else (review
+// required always, or out_of_service in local-only demo mode) goes through
+// the existing localStorage-backed manualOverrides path.
+async function handleManageSave(tu) {
+  const body = document.getElementById('manageBody');
+  const status = body.querySelector('input[name="manageStatus"]:checked').value;
+  const desc = document.getElementById('manageDesc').value;
+  const saveBtn = document.getElementById('manageSaveBtn');
+  const errEl = document.getElementById('manageError');
+  if (errEl) errEl.hidden = true;
+
+  const back4appConfigured = !!(BACK4APP_CONFIG.appId && BACK4APP_CONFIG.jsKey);
+
+  if (status === 'out_of_service' && back4appConfigured) {
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+    try {
+      const existing = lastTuStatusByTu[tu];
+      await setTuStatusStop(tu, true, desc, existing ? existing.object_id : null);
+    } catch (err) {
+      console.error('Failed to save TU_Status:', err);
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Set status'; }
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.innerHTML =
+          `Couldn't save to Back4App: ${escapeHtml(err.message)}.<br>` +
+          `Make sure the JavaScript Key has <strong>create</strong> and <strong>update</strong> permission on ` +
+          `<code>TU_Status</code> in its Class-Level Permissions.`;
+      }
+      return;
+    }
+  } else {
+    setManualOverride(tu, status, desc);
+  }
+
+  await loadFleet();
+  renderManageBody();
+}
+
+// source is 'tu_status' (flips STOP back to false on the existing TU_Status
+// record, keeping REASON as history) or 'local' (clearManualOverride, same
+// as before this feature).
+async function handleManageClear(tu, source) {
+  const errEl = document.getElementById('manageError');
+  if (errEl) errEl.hidden = true;
+
+  if (source === 'tu_status') {
+    const existing = lastTuStatusByTu[tu];
+    try {
+      await setTuStatusStop(tu, false, existing ? existing.reason : '', existing ? existing.object_id : null);
+    } catch (err) {
+      console.error('Failed to clear TU_Status:', err);
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.innerHTML = `Couldn't clear in Back4App: ${escapeHtml(err.message)}.`;
+      }
+      return;
+    }
+  } else {
+    clearManualOverride(tu);
+  }
+
+  await loadFleet();
+  renderManageBody();
+}
+
+function renderModalBody() {
+  const u = lastUnitsByTu[modalTu];
+  const body = document.getElementById('modalBody');
+  if (!u) { closeModal(); return; }
+
+  const rawStatus = u.raw_status || u.status;
+  const hasFault = rawStatus === 'failure' || rawStatus === 'review' || rawStatus === 'maintenance';
+  const statusLabel = STATUS_LABEL[rawStatus] || rawStatus;
+  const activeAlarms = (u.alarms || []).filter(a => !a.acknowledged);
+
+  let html = `<h2 class="modal-tu" id="modalTu">${escapeHtml(u.tu)}</h2>`;
+  html += `<div class="modal-status ${escapeAttr(rawStatus)}">${escapeHtml(statusLabel)}${u.manual ? ' · manual' : ''}${u.tu_status ? ' · Back4App' : ''}</div>`;
+
+  if (u.tu_status) {
+    html += `<div class="modal-detail">
+      <div class="code">Out of service</div>
+      ${u.tu_status_reason ? `<div class="msg">${escapeHtml(u.tu_status_reason)}</div>` : ''}
+      <div class="msg" style="margin-top:6px;opacity:.7">From Back4App (TU_Status) — visible on every device.</div>
+    </div>`;
+
+    if (u.underlying) {
+      const ulabel = STATUS_LABEL[u.underlying.raw_status] || u.underlying.raw_status;
+      html += `<div class="underlying-block">
+        <strong>Live status underneath:</strong> ${escapeHtml(ulabel)}${u.underlying.acknowledged ? ' (acknowledged)' : ''}
+        ${u.underlying.alert_code ? `<br>${escapeHtml(u.underlying.alert_code)}${u.underlying.alert_message ? ' — ' + escapeHtml(u.underlying.alert_message) : ''}` : ''}
+      </div>`;
+    }
+  } else if (u.manual) {
+    const manualLabel = rawStatus === 'out_of_service' ? 'Manually out of service' : 'Manually flagged for review';
+    html += `<div class="modal-detail">
+      <div class="code">${escapeHtml(manualLabel)}</div>
+      ${u.manual_description ? `<div class="msg">${escapeHtml(u.manual_description)}</div>` : ''}
+      ${u.manual_set_at ? `<div class="msg" style="margin-top:6px;opacity:.7">Set ${escapeHtml(new Date(u.manual_set_at).toLocaleString())} — Local to this browser, not synced to Back4App.</div>` : ''}
+    </div>`;
+
+    if (u.underlying) {
+      const ulabel = STATUS_LABEL[u.underlying.raw_status] || u.underlying.raw_status;
+      html += `<div class="underlying-block">
+        <strong>Live status underneath:</strong> ${escapeHtml(ulabel)}${u.underlying.acknowledged ? ' (acknowledged)' : ''}
+        ${u.underlying.alert_code ? `<br>${escapeHtml(u.underlying.alert_code)}${u.underlying.alert_message ? ' — ' + escapeHtml(u.underlying.alert_message) : ''}` : ''}
+      </div>`;
+    }
+  } else if (hasFault && activeAlarms.length > 1) {
+    // Several active alarms on this unit — list all of them, not just the
+    // one (worst) driving the tile's own color/status.
+    html += `<div class="modal-alarm-list">` + activeAlarms.map(a => `
+      <div class="modal-detail">
+        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}</div>
+        <div class="code">${escapeHtml(a.alert_code || 'Active alarm')}</div>
+        <div class="msg">${escapeHtml(a.alert_message || 'No further detail available.')}</div>
+      </div>`).join('') + `</div>`;
+  } else if (hasFault) {
+    html += `<div class="modal-detail">
+      <div class="code">${escapeHtml(u.alert_code || 'Active alarm')}</div>
+      <div class="msg">${escapeHtml(u.alert_message || 'No further detail available.')}</div>
+    </div>`;
+  } else {
+    html += `<div class="modal-empty">No active fault on this unit.</div>`;
+  }
+
+  if (u.acknowledged) {
+    html += `<div class="modal-ack-note">✓ Acknowledged${!BACK4APP_CONFIG.appId ? ' (demo — not saved)' : ''}</div>`;
+  }
+
+  html += '<div class="modal-actions">';
+  if (u.manual || u.tu_status) {
+    html += `<button class="btn btn-unack" id="modalClearManualBtn">Clear ${u.tu_status ? 'out-of-service' : 'manual'} status</button>`;
+    html += `<button class="btn" id="modalEditManualBtn">Edit</button>`;
+  } else {
+    if (hasFault || u.acknowledged) {
+      const willAck = !u.acknowledged;
+      const ackLabel = willAck
+        ? (activeAlarms.length > 1 ? `Acknowledge worst alarm (1 of ${activeAlarms.length})` : 'Acknowledge fault')
+        : 'Un-acknowledge';
+      html += `<button class="btn ${willAck ? 'btn-ack' : 'btn-unack'}" id="modalAckBtn">
+        ${ackLabel}
+      </button>`;
+    }
+    html += `<button class="btn" id="modalSetManualBtn">Set manually</button>`;
+  }
+  html += '</div>';
+  html += `<button class="btn" id="modalCancelBtn" style="width:100%;margin-top:10px">Close</button>`;
+  html += '<div class="modal-error" id="modalError" hidden></div>';
+
+  body.innerHTML = html;
+
+  document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
+  const ackBtn = document.getElementById('modalAckBtn');
+  if (ackBtn) ackBtn.addEventListener('click', () => handleAcknowledge(u));
+  const setManualBtn = document.getElementById('modalSetManualBtn');
+  if (setManualBtn) setManualBtn.addEventListener('click', () => { closeModal(); openManageModal(u.tu); });
+  const editManualBtn = document.getElementById('modalEditManualBtn');
+  if (editManualBtn) editManualBtn.addEventListener('click', () => { closeModal(); openManageModal(u.tu); });
+  const clearManualBtn = document.getElementById('modalClearManualBtn');
+  if (clearManualBtn) clearManualBtn.addEventListener('click', async () => {
+    if (u.tu_status) {
+      clearManualBtn.disabled = true;
+      clearManualBtn.textContent = 'Clearing…';
+      try {
+        await setTuStatusStop(u.tu, false, u.tu_status_reason || '', u.tu_status_object_id || null);
+      } catch (err) {
+        console.error('Failed to clear TU_Status:', err);
+        clearManualBtn.disabled = false;
+        clearManualBtn.textContent = 'Clear out-of-service status';
+        return;
+      }
+    } else {
+      clearManualOverride(u.tu);
+    }
+    await loadFleet();
+    closeModal();
+  });
+}
+
+async function handleAcknowledge(u) {
+  const ackBtn = document.getElementById('modalAckBtn');
+  const errEl = document.getElementById('modalError');
+  errEl.hidden = true;
+  if (ackBtn) { ackBtn.disabled = true; ackBtn.textContent = 'Saving…'; }
+
+  const newValue = !u.acknowledged;
+
+  try {
+    const result = await updateLiveAlarmAcknowledged(u.object_id, newValue);
+    if (!result.persisted) {
+      const alarmKey = u.alarm_key || u.alert_code || u.status;
+      localAckOverrides[u.tu + '|' + alarmKey] = newValue;
+    }
+    appendAckLogEntry({
+      tu: u.tu,
+      alarm_key: u.alarm_key || '',
+      alert_code: u.alert_code || '',
+      alert_message: u.alert_message || '',
+      atenea_timestamp: u.atenea_timestamp || '',
+      action: newValue ? 'Acknowledged' : 'Un-acknowledged',
+      at: new Date().toISOString(),
+      persisted: result.persisted
+    });
+    await loadFleet();
+    if (modalTu === u.tu) renderModalBody();
+  } catch (err) {
+    console.error('Failed to save acknowledgement:', err);
+    if (ackBtn) { ackBtn.disabled = false; ackBtn.textContent = newValue ? 'Acknowledge fault' : 'Un-acknowledge'; }
+    errEl.hidden = false;
+    errEl.innerHTML =
+      `Couldn't save to Back4App: ${escapeHtml(err.message)}.<br>` +
+      `Make sure the JavaScript Key has <strong>update</strong> permission on ` +
+      `<code>Live_Alarms</code> in its Class-Level Permissions — see README.md → "Acknowledging faults".`;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+initManageModal();
+initSoundToggle();
+initAckReportModal();
+initDailyResetButton();
+initTabs();
+loadFleet();
+</script>
+</body>
+</html>

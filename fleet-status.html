@@ -824,10 +824,8 @@
       </div>
       <div class="header-actions">
         <div class="badges" id="badges"></div>
-        <button class="btn-manual" id="soundToggleBtn" type="button">🔔 Sound on</button>
-        <button class="btn-manual" id="ackReportBtn" type="button">🧾 Acknowledgment report</button>
-        <button class="btn-manual" id="dailyResetBtn" type="button" title="Downloads a CSV of every alarm, then acknowledges them all in Live_Alarms — except Out of Service units, left untouched">🔄 Reset Alarms</button>
-        <button class="btn-manual" id="manualBtn" type="button">⚙️ Set unit status</button>
+        <button class="btn-manual" id="dailyResetBtn" type="button" title="Downloads a CSV of every record in Live_Alarms, then permanently deletes the entire class in one run — no exceptions">Reset Alarms</button>
+        <button class="btn-manual" id="manualBtn" type="button">Set unit status</button>
       </div>
     </header>
 
@@ -873,14 +871,6 @@
       <div id="manageBody"></div>
     </div>
   </div>
-  <div class="modal-overlay" id="ackReportOverlay" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="ackReportTitle" style="max-width:640px">
-      <button class="modal-close" id="ackReportClose" aria-label="Close">×</button>
-      <h2 class="modal-tu" id="ackReportTitle" style="font-size:19px">Acknowledgment report</h2>
-      <div id="ackReportBody"></div>
-    </div>
-  </div>
-
   <datalist id="unitList"></datalist>
 
 <!--
@@ -1326,6 +1316,7 @@ window.__FLEET_DATA__ = {
 };
 
 </script>
+
 <script>
 /*
  * ── ROSTER (which TUs exist at all) ─────────────────────────────────────
@@ -1434,7 +1425,7 @@ const LIVE_ALARMS_FIELDS = {
  * its description — regardless of any Live_Alarms record or roster status.
  * This is the ONLY source for Out of Service once Back4App is configured;
  * see applyManualOverride() for the full precedence chain and "Set unit
- * status" (renderManageBody()) for how the ⚙️ button writes here.
+ * status" (renderManageBody()) for how that button writes here.
  */
 const TU_STATUS_FIELDS = {
   tu: ['TU', 'tu'],
@@ -1493,87 +1484,10 @@ function pickWorstActiveAlarm(alarms) {
 }
 
 /*
- * ── STATUS-CHANGE ALARM SOUND ────────────────────────────────────────────
- * A short two-beep tone plays whenever ANY unit's displayed status differs
- * from the previous render — a new fault, an escalation, a fault clearing,
- * an acknowledge/un-acknowledge, or a manual override all count. Generated
- * with the Web Audio API rather than an audio file, so the panel stays one
- * self-contained HTML file with nothing extra to embed or host.
- *
- * Browsers block audio from playing before the page has seen a user
- * gesture (click/keypress) — so if status changes happen before anyone has
- * touched the page, that first alarm can be silent; every alarm after the
- * first interaction plays normally. Muted with the 🔔/🔕 header button,
- * which persists across reloads (localStorage).
- */
-const SOUND_MUTED_KEY = 'aor_fleet_sound_muted_v1';
-let soundMuted = localStorage.getItem(SOUND_MUTED_KEY) === '1';
-let audioCtx = null;
-let previousStatusByTu = null; // null = no baseline yet (first render), so nothing to compare
-
-function ensureAudioCtx() {
-  if (audioCtx) return audioCtx;
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    audioCtx = Ctx ? new Ctx() : null;
-  } catch (err) {
-    console.warn('Web Audio API not available — status-change alarm sound is disabled:', err);
-  }
-  return audioCtx;
-}
-
-function unlockAudio() {
-  const ctx = ensureAudioCtx();
-  if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
-}
-document.addEventListener('pointerdown', unlockAudio, { once: true });
-document.addEventListener('keydown', unlockAudio, { once: true });
-
-function playAlarmTone() {
-  if (soundMuted) return;
-  const ctx = ensureAudioCtx();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    [0, 0.22].forEach(offset => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, now + offset);
-      gain.gain.setValueAtTime(0.0001, now + offset);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + offset);
-      osc.stop(now + offset + 0.18);
-    });
-  } catch (err) {
-    console.warn('Could not play alarm tone:', err);
-  }
-}
-
-function initSoundToggle() {
-  const btn = document.getElementById('soundToggleBtn');
-  const refresh = () => {
-    btn.textContent = soundMuted ? '🔕 Sound off' : '🔔 Sound on';
-    btn.title = soundMuted
-      ? 'Status-change alarm sound is muted — click to unmute'
-      : 'Status-change alarm sound is on — click to mute';
-  };
-  refresh();
-  btn.addEventListener('click', () => {
-    soundMuted = !soundMuted;
-    try { localStorage.setItem(SOUND_MUTED_KEY, soundMuted ? '1' : '0'); } catch (err) { /* ignore */ }
-    refresh();
-  });
-}
-
-/*
  * ── SHARED FILE-DOWNLOAD HELPER ──────────────────────────────────────────
- * Used by both the acknowledgment report (CSV) and the out-of-service
- * export (JSON) below. Plain client-side Blob download — works even when
- * this panel is opened directly as a file:// page, no server involved.
+ * Used by the various CSV exports below (List tab, daily reset). Plain
+ * client-side Blob download — works even when this panel is opened
+ * directly as a file:// page, no server involved.
  */
 function downloadBlob(filename, mime, content) {
   const blob = new Blob([content], { type: mime });
@@ -1591,106 +1505,9 @@ function timestampForFilename() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
-/*
- * ── ACKNOWLEDGMENT REPORT (local register) ───────────────────────────────
- * Every acknowledge action taken from this browser is logged here
- * (localStorage, key aor_fleet_ack_log_v1), independent of Back4App — so
- * there's always a local register of what was acknowledged and when, even
- * though the live "acknowledged" flag itself now lives directly on the
- * Live_Alarms record (see "ACKNOWLEDGING FAULTS" below). Newest first.
- * Un-acknowledge actions are logged too (so the register also shows when
- * something was reversed) but only "Acknowledged" entries appear in the
- * report/CSV, per the ask: a register of alarms that have been
- * acknowledged.
- */
-const ACK_LOG_KEY = 'aor_fleet_ack_log_v1';
-
-function loadAckLog() {
-  try {
-    const raw = localStorage.getItem(ACK_LOG_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (err) {
-    console.warn('Could not read acknowledgment log from localStorage:', err);
-    return [];
-  }
-}
-
-function saveAckLog() {
-  try {
-    localStorage.setItem(ACK_LOG_KEY, JSON.stringify(ackLog));
-  } catch (err) {
-    console.warn('Could not save acknowledgment log to localStorage (it will not survive a reload):', err);
-  }
-}
-
-let ackLog = loadAckLog();
-
-function appendAckLogEntry(entry) {
-  ackLog.unshift(entry);
-  saveAckLog();
-}
-
 function csvEscape(val) {
   const s = String(val == null ? '' : val);
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}
-
-function ackReportRows() {
-  return ackLog.filter(e => e.action === 'Acknowledged');
-}
-
-function downloadAckReportCsv() {
-  const rows = ackReportRows();
-  const header = ['TU', 'Alarm code', 'Message', 'AteneaTimestamp', 'Acknowledged at'];
-  const lines = [header.map(csvEscape).join(',')];
-  rows.forEach(e => {
-    lines.push([e.tu, e.alert_code, e.alert_message, e.atenea_timestamp || '', e.at].map(csvEscape).join(','));
-  });
-  downloadBlob(`aor_fleet_ack_report_${timestampForFilename()}.csv`, 'text/csv', lines.join('\r\n'));
-}
-
-function initAckReportModal() {
-  document.getElementById('ackReportBtn').addEventListener('click', openAckReportModal);
-  document.getElementById('ackReportClose').addEventListener('click', closeAckReportModal);
-  document.getElementById('ackReportOverlay').addEventListener('click', e => {
-    if (e.target.id === 'ackReportOverlay') closeAckReportModal();
-  });
-}
-
-function openAckReportModal() {
-  renderAckReportBody();
-  document.getElementById('ackReportOverlay').hidden = false;
-}
-
-function closeAckReportModal() {
-  document.getElementById('ackReportOverlay').hidden = true;
-}
-
-function renderAckReportBody() {
-  const body = document.getElementById('ackReportBody');
-  const rows = ackReportRows();
-  let html = `<p style="color:var(--ink-muted);font-size:13px;margin:0 0 14px">
-    ${rows.length} acknowledgment${rows.length === 1 ? '' : 's'} logged in this browser — local register, kept in localStorage.
-  </p>`;
-  html += '<div class="manage-list" style="margin-top:0;border-top:none;padding-top:0;max-height:340px;overflow-y:auto">';
-  if (!rows.length) {
-    html += '<div class="manage-empty">No faults have been acknowledged yet.</div>';
-  } else {
-    html += rows.map(e => `
-      <div class="manage-row">
-        <span class="mr-tu">${escapeHtml(e.tu)}</span>
-        <span class="mr-desc">${escapeHtml(e.alert_code || '')}${e.alert_message ? ' — ' + escapeHtml(e.alert_message) : ''}${e.atenea_timestamp ? ` <span style="opacity:.6">(alarm: ${escapeHtml(formatAteneaTimestamp(e.atenea_timestamp))})</span>` : ''}</span>
-        <span class="mr-desc" style="flex:none;color:var(--ink-dim)">${escapeHtml(new Date(e.at).toLocaleString())}</span>
-      </div>`
-    ).join('');
-  }
-  html += '</div>';
-  html += `<div class="modal-actions" style="margin-top:16px">
-    <button class="btn btn-ack" id="ackReportDownloadBtn"${rows.length ? '' : ' disabled'}>Download CSV</button>
-  </div>`;
-  body.innerHTML = html;
-  const dlBtn = document.getElementById('ackReportDownloadBtn');
-  if (dlBtn) dlBtn.addEventListener('click', downloadAckReportCsv);
 }
 
 /*
@@ -1703,7 +1520,7 @@ function renderAckReportBody() {
  *
  * "Out of service" USED to be settable here too, but is now backed by the
  * TU_Status Back4App class instead (see "OUT OF SERVICE (TU_Status)" above
- * and setTuStatusStop()) — the ⚙️ "Set unit status" button writes there
+ * and setTuStatusStop()) — the "Set unit status" button writes there
  * directly once Back4App is configured, so it's visible on every device,
  * not just this browser. manualOverrides still accepts an out_of_service
  * entry as a LOCAL-ONLY fallback for trying the panel out without Back4App
@@ -1810,35 +1627,63 @@ function applyManualOverride(unit) {
 }
 
 /*
- * ── DAILY RESET (manual only — 🔄 "Reset Alarms" header button) ──────────
+ * ── DAILY RESET (manual only — "Reset Alarms" header button) ─────────────
  * No automatic midnight timer and no catch-up-on-load: this only ever runs
  * when someone clicks "Reset Alarms" in the header, and only after they
  * confirm the warning dialog. On Accept, in order:
  *
- *   1. Every alarm currently held for every unit — acknowledged AND not —
- *      is written to one CSV (aor_fleet_daily_reset_<timestamp>.csv), one
- *      row per alarm, so there's a complete audit record of exactly what
- *      existed at the moment of the reset, before anything changes.
- *   2. Every one of those alarms belonging to a unit that is NOT Out of
- *      Service gets `acknowledged: true` written straight to its
- *      Live_Alarms record — same PUT handleAcknowledge() uses, just run
- *      across every matching record instead of one. Out of Service units'
- *      alarms are left exactly as they are (untouched, not even read for
- *      the write) — preserving the "except out of service" rule from how
- *      this button was originally specified, since nothing said to change
- *      that here. A unit manually flagged "review required" (no
- *      Live_Alarms record behind it) has that override cleared instead,
- *      for the same "back to healthy" effect.
+ *   1. EVERY record currently in the Live_Alarms class — not just the ones
+ *      currently rendered on a tile — is fetched straight from Back4App,
+ *      PAGED through with `skip` (see RESET_ALARMS_PAGE_SIZE /
+ *      fetchAllLiveAlarmsRaw() below) rather than a single capped query.
+ *      Parse/Back4App hard-caps any one REST query at 1000 rows regardless
+ *      of a higher `limit` — without paging, a class with more than 1000
+ *      rows (easy to reach once Live_Alarms accumulates history instead of
+ *      being purged) would silently leave everything past the first 1000
+ *      behind, which is exactly why this used to take repeated clicks to
+ *      actually empty the class. One click now walks every page.
+ *   2. Every one of those raw records is written to one CSV
+ *      (aor_fleet_daily_reset_<timestamp>.csv), one row per record, so
+ *      there's a complete audit record of exactly what existed at the
+ *      moment of the reset, before anything changes. This CSV is now the
+ *      ONLY surviving record of a deleted alarm — see (3).
+ *   3. Every one of those records — for EVERY unit, Out of Service units
+ *      included, and regardless of whether its TU even matches a unit in
+ *      the local roster or whether it's flagged "off" — is PERMANENTLY
+ *      DELETED from Live_Alarms: a DELETE on that record's objectId, not a
+ *      PUT, so the row is gone from Back4App entirely, not just marked
+ *      acknowledged. This does NOT change a unit's Out of Service status
+ *      itself — that lives on the separate TU_Status record (STOP/REASON),
+ *      untouched here. A unit manually flagged "review required" (no
+ *      Live_Alarms record behind it) has that override cleared too, for
+ *      the same "back to healthy" effect.
  *
- * Every acknowledgment (and manual-override clear) this performs is also
- * logged to the acknowledgment register (aor_fleet_ack_log_v1), tagged
- * "(daily reset)" so it's distinguishable from a one-off manual click in
- * the 🧾 Acknowledgment report. See README.md -> "Daily reset".
+ * This is deliberately destructive: unlike the single-alarm "Acknowledge
+ * fault" button (updateLiveAlarmAcknowledged(), still a non-destructive
+ * PUT), there is no "undo" once a Reset Alarms delete succeeds — only the
+ * CSV from step 2 still has the data. That's why the confirm dialog below
+ * spells this out and why the JavaScript Key needs `delete` Class-Level
+ * Permission on Live_Alarms (see README.md -> "Connecting to Back4App").
+ *
+ * Without Back4App configured (demo/local mode), there's no real
+ * Live_Alarms class to page through at all — this falls back to the
+ * roster-scoped behavior (runDailyReset()'s `else` branch below) so the
+ * feature stays testable against the demo roster.
+ *
+ * See README.md -> "Daily reset".
  */
 let dailyResetInFlight = false; // guards against a double-click re-entering mid-run
 
+// Parse/Back4App REST hard-caps a single query's results at 1000 rows no
+// matter what `limit` is requested — this is the page size used to walk
+// the whole class via `skip` in fetchAllLiveAlarmsRaw() below.
+const RESET_ALARMS_PAGE_SIZE = 1000;
+// Last-resort guard against an unbounded loop (e.g. a server bug that
+// never returns a short final page) — 200 pages is 200,000 rows, far
+// beyond anything a 95-unit fleet should ever accumulate in Live_Alarms.
+const RESET_ALARMS_MAX_PAGES = 200;
+
 function downloadDailyResetAlarmsCsv(units) {
-  const snapshotAt = new Date().toISOString();
   const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'AteneaTimestamp', 'Acknowledged', 'Object ID'];
   const lines = [header.map(csvEscape).join(',')];
   units.forEach(u => {
@@ -1859,25 +1704,128 @@ function downloadDailyResetAlarmsCsv(units) {
   return lines.length - 1; // row count, excluding the header
 }
 
-// Same acknowledge path handleAcknowledge() uses (persists to Back4App when
-// configured, falls back to a session-only localAckOverrides entry when
-// not) so a daily-reset acknowledgment behaves identically to a manual one.
-async function acknowledgeAlarmForDailyReset(tu, alarm) {
-  const result = await updateLiveAlarmAcknowledged(alarm.object_id, true);
-  if (!result.persisted) {
-    const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
-    localAckOverrides[tu + '|' + alarmKey] = true;
-  }
-  appendAckLogEntry({
-    tu,
-    alarm_key: alarm.alarm_key || '',
-    alert_code: alarm.alert_code || '',
-    alert_message: alarm.alert_message || '',
-    atenea_timestamp: alarm.atenea_timestamp || '',
-    action: 'Acknowledged (daily reset)',
-    at: new Date().toISOString(),
-    persisted: result.persisted
+// Same CSV shape as downloadDailyResetAlarmsCsv() above, but built straight
+// from RAW Live_Alarms records (fetchAllLiveAlarmsRaw()) instead of the
+// roster-merged `units` — used when Back4App is configured, so the audit
+// trail covers every record about to be deleted, not just the ones that
+// happen to be currently rendered on a known unit. "Unit status" falls
+// back to this record's own severity when its TU doesn't match a unit
+// currently on screen (e.g. a stale/typo'd TU, or one added to Back4App
+// but not yet to the roster).
+function downloadDailyResetAlarmsCsvFromRaw(rawRecords) {
+  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'AteneaTimestamp', 'Acknowledged', 'Object ID'];
+  const lines = [header.map(csvEscape).join(',')];
+  rawRecords.forEach(rec => {
+    const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu) || '';
+    const severityStatus = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity));
+    const knownUnit = tu && lastUnitsByTu[tu];
+    lines.push([
+      tu,
+      knownUnit ? (STATUS_LABEL[knownUnit.status] || knownUnit.status) : 'Unknown (not on current roster)',
+      STATUS_LABEL[severityStatus] || severityStatus,
+      pickField(rec, LIVE_ALARMS_FIELDS.code) || '',
+      pickField(rec, LIVE_ALARMS_FIELDS.message) || '',
+      normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp)) || '',
+      isAcknowledgedTrue(rec) ? 'Yes' : 'No',
+      rec.objectId || ''
+    ].map(csvEscape).join(','));
   });
+  downloadBlob(`aor_fleet_daily_reset_${timestampForFilename()}.csv`, 'text/csv', lines.join('\r\n'));
+  return lines.length - 1; // row count, excluding the header
+}
+
+// Fetches EVERY record in Live_Alarms, paging with `skip` past Parse's
+// 1000-row-per-query hard cap (see RESET_ALARMS_PAGE_SIZE above) — this is
+// what lets Reset Alarms clear the whole class in one click regardless of
+// how large it's grown, instead of only ever reaching the first 1000 rows.
+// Returns null in demo/local mode (nothing configured to page through).
+async function fetchAllLiveAlarmsRaw() {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return null;
+  const headers = { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey };
+  const all = [];
+  let skip = 0;
+  let hitPageCap = false;
+  for (let page = 0; page < RESET_ALARMS_MAX_PAGES; page++) {
+    const res = await fetch(
+      `https://parseapi.back4app.com/classes/Live_Alarms?limit=${RESET_ALARMS_PAGE_SIZE}&skip=${skip}&order=createdAt`,
+      { headers }
+    );
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      throw new Error(`Back4App HTTP ${res.status} (paged fetch, page ${page + 1})${bodyText ? ' — ' + bodyText : ''}`);
+    }
+    const body = await res.json();
+    const results = body.results || [];
+    all.push(...results);
+    if (results.length < RESET_ALARMS_PAGE_SIZE) { hitPageCap = false; break; }
+    skip += RESET_ALARMS_PAGE_SIZE;
+    if (page === RESET_ALARMS_MAX_PAGES - 1) hitPageCap = true;
+  }
+  if (hitPageCap) {
+    console.warn(
+      `Daily reset: stopped paging Live_Alarms after ${all.length} record(s) — hit the safety cap of ` +
+      `${RESET_ALARMS_MAX_PAGES} pages. There may be more left; running Reset Alarms again will pick up ` +
+      `the rest.`
+    );
+  }
+  return all;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// A short pause between each Back4App write this button performs. Without
+// it, dozens of DELETE requests fire back-to-back with no gap at all —
+// easily enough to trip Back4App's per-second burst limit on a fleet with a
+// lot of active alarms, which comes back as a transient error (e.g. HTTP
+// 429) and, before this fix, could silently drop that one alarm's deletion
+// (see deleteAlarmForDailyReset()'s retry below for the other half of the
+// fix). 150ms keeps even a very bad day (dozens of alarms) comfortably
+// under typical limits while still finishing in a few seconds, not minutes.
+const DAILY_RESET_WRITE_DELAY_MS = 150;
+
+// Demo/local-mode-only fallback path (Back4App not configured, so there's
+// nothing real in Live_Alarms to page through — see fetchAllLiveAlarmsRaw()
+// above and the `liveConfigured` branch in runDailyReset() below for the
+// real path). Falls back to a session-only localAckOverrides entry — now
+// "locally hidden" rather than "locally acknowledged", but reuses the same
+// map since the visual effect (alarm disappears from this browser) is
+// identical. Retries once after a short backoff on failure, same as the
+// live path, for consistency even though a demo "delete" can't actually
+// fail against a real server.
+async function deleteAlarmForDailyReset(tu, alarm) {
+  const attempt = async () => {
+    const result = await deleteLiveAlarmRecord(alarm.object_id);
+    if (!result.persisted) {
+      const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
+      localAckOverrides[tu + '|' + alarmKey] = true;
+    }
+  };
+  try {
+    await attempt();
+  } catch (err) {
+    console.warn(`Daily reset: first attempt to delete an alarm on ${tu} failed, retrying once:`, err);
+    await sleep(500);
+    await attempt(); // if this throws too, the caller's catch counts it as a real failure
+  }
+}
+
+// The real (Back4App-configured) delete path — permanently removes ONE raw
+// Live_Alarms record by objectId, used by runDailyReset()'s main sweep over
+// fetchAllLiveAlarmsRaw()'s full paged result set. Retries once after a
+// short backoff on failure — covers a transient error (e.g. a momentary
+// 429/5xx from Back4App under the burst of deletes this button performs)
+// instead of that one record silently surviving the reset.
+async function deleteRawAlarmForDailyReset(objectId) {
+  try {
+    await deleteLiveAlarmRecord(objectId);
+  } catch (err) {
+    console.warn(`Daily reset: first attempt to delete Live_Alarms/${objectId} failed, retrying once:`, err);
+    await sleep(500);
+    await deleteLiveAlarmRecord(objectId); // if this throws too, the caller's catch counts it as a real failure
+  }
 }
 
 async function runDailyReset() {
@@ -1888,46 +1836,101 @@ async function runDailyReset() {
 
   dailyResetInFlight = true;
   try {
-    const rowCount = downloadDailyResetAlarmsCsv(units);
+    const { appId, jsKey } = BACK4APP_CONFIG;
+    const liveConfigured = !!(appId && jsKey);
 
-    let acknowledgedCount = 0;
+    // Clearing a manual "review required" override is always a local,
+    // browser-only action (manualOverrides never touches Back4App), so it
+    // runs the same way regardless of which branch below handles the real
+    // Live_Alarms deletion. Deliberately not skipped for a unit that also
+    // gets its underlying alarm(s) deleted below — those are two
+    // independent things this button does for that unit (see the doc
+    // comment above runDailyReset for why).
     let clearedManualCount = 0;
-    const oosCount = units.filter(u => u.status === 'out_of_service').length;
-
     for (const u of units) {
-      if (u.status === 'out_of_service') continue; // left exactly as-is — alarms untouched, nothing written
-
       if (u.manual && u.status === 'review') {
         clearManualOverride(u.tu);
-        appendAckLogEntry({
-          tu: u.tu,
-          alarm_key: u.alarm_key || '',
-          alert_code: u.alert_code || '',
-          alert_message: u.alert_message || '',
-          atenea_timestamp: '', // no live alarm behind a manual "review required" clear
-          action: 'Cleared (daily reset)',
-          at: new Date().toISOString(),
-          persisted: true
-        });
         clearedManualCount++;
-        continue;
+      }
+    }
+
+    let rowCount = 0;
+    let deletedCount = 0;
+    let totalCount = 0;
+    const failedAlarms = []; // { tu, alert_code, error } — surfaced to the user below, not just the console
+
+    if (liveConfigured) {
+      // The real path: fetch the ENTIRE Live_Alarms class (paged past
+      // Parse's 1000-row cap — see fetchAllLiveAlarmsRaw()) and delete
+      // every record it returns, with no filtering by roster membership,
+      // unit status, or "flag" — this is what makes one click enough
+      // regardless of how large the class has grown.
+      let rawRecords;
+      try {
+        rawRecords = await fetchAllLiveAlarmsRaw();
+      } catch (err) {
+        alert(
+          'Daily reset could not read Live_Alarms from Back4App, so nothing was downloaded or deleted:\n\n' +
+          (err && err.message ? err.message : String(err))
+        );
+        return; // nothing fetched — nothing to snapshot or delete this run
       }
 
-      for (const alarm of (u.alarms || [])) {
+      rowCount = downloadDailyResetAlarmsCsvFromRaw(rawRecords);
+      totalCount = rawRecords.length;
+
+      for (const rec of rawRecords) {
+        const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu) || '(no TU field)';
         try {
-          await acknowledgeAlarmForDailyReset(u.tu, alarm);
-          acknowledgedCount++;
+          await deleteRawAlarmForDailyReset(rec.objectId);
+          deletedCount++;
         } catch (err) {
-          console.warn(`Daily reset: failed to acknowledge an alarm on ${u.tu}:`, err);
+          console.warn(`Daily reset: failed to delete Live_Alarms/${rec.objectId} (${tu}):`, err);
+          failedAlarms.push({ tu, alert_code: pickField(rec, LIVE_ALARMS_FIELDS.code) || '', error: err && err.message ? err.message : String(err) });
+        }
+        await sleep(DAILY_RESET_WRITE_DELAY_MS); // pace writes — see DAILY_RESET_WRITE_DELAY_MS above
+      }
+    } else {
+      // Demo/local-only mode — no live Live_Alarms to page through, so
+      // fall back to the roster-scoped CSV + local-hide behavior so the
+      // feature is still fully testable without Back4App configured.
+      rowCount = downloadDailyResetAlarmsCsv(units);
+
+      for (const u of units) {
+        for (const alarm of (u.alarms || [])) {
+          totalCount++;
+          try {
+            await deleteAlarmForDailyReset(u.tu, alarm);
+            deletedCount++;
+          } catch (err) {
+            console.warn(`Daily reset: failed to delete an alarm on ${u.tu}:`, err);
+            failedAlarms.push({ tu: u.tu, alert_code: alarm.alert_code || '', error: err && err.message ? err.message : String(err) });
+          }
+          await sleep(DAILY_RESET_WRITE_DELAY_MS); // pace writes — see DAILY_RESET_WRITE_DELAY_MS above
         }
       }
     }
 
     console.log(
-      `Daily reset: ${rowCount} alarm(s) written to the CSV snapshot, ${acknowledgedCount} alarm(s) ` +
-      `acknowledged=true, ${clearedManualCount} manual "review required" override(s) cleared, ${oosCount} ` +
-      `out-of-service unit(s) left untouched.`
+      `Daily reset: ${rowCount} record(s) written to the CSV snapshot, ${deletedCount} of ${totalCount} ` +
+      `record(s) permanently deleted from Live_Alarms, ${clearedManualCount} manual "review required" ` +
+      `override(s) cleared, ${failedAlarms.length} record(s) failed to delete even after a retry.`
     );
+
+    if (failedAlarms.length) {
+      const preview = failedAlarms.slice(0, 5).map(f => `${f.tu}${f.alert_code ? ` (${f.alert_code})` : ''}`).join(', ');
+      const more = failedAlarms.length > 5 ? `, and ${failedAlarms.length - 5} more` : '';
+      alert(
+        `Reset Alarms finished, but ${failedAlarms.length} record(s) could not be deleted from Back4App ` +
+        `after retrying: ${preview}${more}.\n\n` +
+        `The CSV downloaded still captured everything as it was before the reset, and those record(s) are ` +
+        `still live in Live_Alarms — nothing was lost. This is usually a temporary issue (e.g. Back4App ` +
+        `briefly rate-limiting the burst of deletes, or the JavaScript Key missing "delete" permission on ` +
+        `Live_Alarms) — check the browser console (F12) for the specific error on each one, and running ` +
+        `Reset Alarms again is safe: it will simply try to delete those same records again.`
+      );
+    }
+
     await loadFleet();
   } finally {
     dailyResetInFlight = false;
@@ -1938,9 +1941,13 @@ function initDailyResetButton() {
   document.getElementById('dailyResetBtn').addEventListener('click', () => {
     const ok = confirm(
       'Run the daily reset now?\n\n' +
-      'This will download a CSV of every current alarm (acknowledged and not), then set ' +
-      'acknowledged = true on every one of those alarms in Live_Alarms — except alarms belonging to ' +
-      'Out of Service units, which are left untouched.\n\nThis cannot be undone from here. Continue?'
+      'This will download a CSV of every record currently in Live_Alarms (acknowledged and not), then ' +
+      'PERMANENTLY DELETE every one of them from Back4App — the entire class, with no exceptions, in one ' +
+      'run (paged past Back4App\'s 1000-row-per-query limit, so this empties it even if it has grown ' +
+      'larger than that). Out of Service units are included too — their Out of Service status itself is ' +
+      'not affected, only their alarm history.\n\n' +
+      'This is not reversible: once deleted, the only remaining copy of that data is the CSV that just ' +
+      'downloaded. Continue?'
     );
     if (!ok) return;
     runDailyReset().catch(err => {
@@ -2062,6 +2069,34 @@ async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
   if (!res.ok) {
     const bodyText = await res.text().catch(() => '');
     throw new Error(`Back4App HTTP ${res.status} (update)${bodyText ? ' — ' + bodyText : ''}`);
+  }
+  return { persisted: true };
+}
+
+/*
+ * ── DELETING A LIVE_ALARMS RECORD (Reset Alarms only) ────────────────────
+ * Used only by the "Reset Alarms" header button's daily-reset flow
+ * (deleteAlarmForDailyReset() above) — a permanent DELETE that removes the
+ * record from Back4App entirely, unlike updateLiveAlarmAcknowledged()'s
+ * non-destructive PUT used by the single-alarm Acknowledge/Un-acknowledge
+ * button. Mirrors updateLiveAlarmAcknowledged()'s config/objectId gating
+ * and error-throwing shape; a DELETE needs no request body.
+ */
+async function deleteLiveAlarmRecord(objectId) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey || !objectId) return { persisted: false }; // demo/local-only mode, or no live record to delete
+
+  const headers = {
+    'X-Parse-Application-Id': appId,
+    'X-Parse-JavaScript-Key': jsKey
+  };
+  const res = await fetch(`https://parseapi.back4app.com/classes/Live_Alarms/${objectId}`, {
+    method: 'DELETE',
+    headers
+  });
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new Error(`Back4App HTTP ${res.status} (delete)${bodyText ? ' — ' + bodyText : ''}`);
   }
   return { persisted: true };
 }
@@ -2361,17 +2396,6 @@ function showLoadError(err) {
 function render(json) {
   const units = json.units || [];
   const isDemo = !!(json._meta && json._meta.source);
-
-  // Play the alarm tone if any unit's displayed status differs from the
-  // previous render — skipped on the very first render (nothing to compare
-  // against yet, so opening the panel with existing faults stays silent).
-  const newStatusByTu = {};
-  units.forEach(u => { newStatusByTu[u.tu] = u.status; });
-  if (previousStatusByTu) {
-    const changed = Object.keys(newStatusByTu).some(tu => newStatusByTu[tu] !== previousStatusByTu[tu]);
-    if (changed) playAlarmTone();
-  }
-  previousStatusByTu = newStatusByTu;
 
   lastUnitsByTu = {};
   units.forEach(u => { lastUnitsByTu[u.tu] = u; });
@@ -3042,16 +3066,6 @@ async function handleAcknowledge(u) {
       const alarmKey = u.alarm_key || u.alert_code || u.status;
       localAckOverrides[u.tu + '|' + alarmKey] = newValue;
     }
-    appendAckLogEntry({
-      tu: u.tu,
-      alarm_key: u.alarm_key || '',
-      alert_code: u.alert_code || '',
-      alert_message: u.alert_message || '',
-      atenea_timestamp: u.atenea_timestamp || '',
-      action: newValue ? 'Acknowledged' : 'Un-acknowledged',
-      at: new Date().toISOString(),
-      persisted: result.persisted
-    });
     await loadFleet();
     if (modalTu === u.tu) renderModalBody();
   } catch (err) {
@@ -3071,8 +3085,6 @@ function escapeHtml(s) {
 function escapeAttr(s) { return escapeHtml(s); }
 
 initManageModal();
-initSoundToggle();
-initAckReportModal();
 initDailyResetButton();
 initTabs();
 loadFleet();

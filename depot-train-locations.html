@@ -661,7 +661,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "4.5";
+const APP_VERSION = "4.6";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -1164,6 +1164,14 @@ async function loadStopList(){
 const PERMS=[["Stabling","Stabling"],["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Admin","Admin"]];
 let adminLoaded=false, adminUsers=[];
 function openAdmin(){
+  const cur=(typeof Parse!=='undefined')?Parse.User.current():null;
+  if(!cur || cur.get("Admin")!==true){
+    if($("adminCreate")) $("adminCreate").disabled=true;
+    adminSetStatus('bad','Admin access required.');
+    if($("adminContent")) $("adminContent").innerHTML='<div class="rep-empty bad">You do not have Admin permission.</div>';
+    return;
+  }
+  if($("adminCreate")) $("adminCreate").disabled=false;
   const pc=$("adminCreatePerms");
   if(pc && !pc.innerHTML){ pc.innerHTML=PERMS.map(pr=>'<label class="perm-item"><input type="checkbox" data-newperm="'+pr[0]+'"> '+escapeHtml(pr[1])+'</label>').join(''); }
   if(!adminLoaded) loadUsers();
@@ -1175,6 +1183,7 @@ async function adminCreateUser(){
   const username=(($("adminUser")&&$("adminUser").value)||'').trim();
   const password=(($("adminPass")&&$("adminPass").value)||'');
   if(!username||!password){ adminSetStatus('bad','Enter a username and password.'); return; }
+  if(password.length<8){ adminSetStatus('bad','Password must be at least 8 characters.'); return; }
   const perms={};
   $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>{ perms[cb.getAttribute('data-newperm')]=cb.checked; });
   adminSetStatus('info','Creating '+username+'\u2026');

@@ -376,7 +376,7 @@
     background:radial-gradient(900px 500px at 50% -10%,#16222e,transparent 60%),var(--bg)}
   .login-card{width:100%;max-width:360px;background:linear-gradient(180deg,#141d26,#0e151b);border:1px solid var(--line);
     border-radius:16px;padding:26px 22px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
-  .login-brand{display:flex;align-items:baseline;gap:10px;justify-content:center}
+  .login-brand{display:flex;align-items:baseline;gap:10px;justify-content:center;margin-bottom:26px}
   .login-brand h1{font-family:var(--cond);text-transform:uppercase;letter-spacing:.09em;font-size:24px;margin:0}
   .login-sub{text-align:center;color:var(--ink-dim);font-size:13px;margin:4px 0 20px}
   #loginMsg .msg{margin:0 0 12px}
@@ -387,7 +387,6 @@
 <div class="login" id="login">
   <div class="login-card">
     <div class="login-brand"><h1>Depot Control</h1><span class="ver" id="loginVer">v1</span></div>
-    <p class="login-sub">Technician sign-in</p>
     <div class="field"><label>Username</label>
       <input id="loginUser" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="username"></div>
     <div class="field"><label>Password</label>
@@ -438,8 +437,6 @@
     <span class="sub-title">Stabling</span>
     <span class="sub" id="depotSub">Stabling diagram</span>
     <div class="spacer"></div>
-    <div class="search"><span style="color:var(--ink-faint);font-family:var(--mono);font-size:12px">⌕</span>
-      <input id="search" placeholder="find unit…" autocomplete="off"></div>
     <span class="clock" id="clock">—</span>
     <div class="status-pill demo" id="statusPill"><span class="dot"></span><span id="statusText">Sample data</span></div>
     <button class="btn icon" id="soundBtn" title="Mute alarms" aria-label="Toggle alarm sound"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16.5 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19 7a7 7 0 0 1 0 10"/></svg></button>
@@ -664,7 +661,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "4.3";
+const APP_VERSION = "4.5";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -1172,55 +1169,53 @@ function openAdmin(){
   if(!adminLoaded) loadUsers();
 }
 function adminSetStatus(kind,msg){ const el=$("adminStatus"); if(el) el.innerHTML=msg?'<div class="msg '+kind+'" style="display:inline-block;margin:0">'+escapeHtml(msg)+'</div>':''; }
+async function adminErr(){return '';}
+function adminErrMsg(err){ const m=(err&&err.message)||String(err); if(/invalid function|unauthorized|cannot find|not found|141/i.test(m)) return m+' \u2014 make sure back4app-cloud/main.js is deployed in Back4App Cloud Code.'; return m; }
 async function adminCreateUser(){
   const username=(($("adminUser")&&$("adminUser").value)||'').trim();
   const password=(($("adminPass")&&$("adminPass").value)||'');
   if(!username||!password){ adminSetStatus('bad','Enter a username and password.'); return; }
-  if(!CONFIG.appId||!CONFIG.jsKey){ adminSetStatus('bad','Add your App ID and JavaScript Key in \u2699 first.'); return; }
-  const body={username:username, password:password, ACL:{"*":{"read":true,"write":true}}};
-  $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>{ body[cb.getAttribute('data-newperm')]=cb.checked; });
+  const perms={};
+  $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>{ perms[cb.getAttribute('data-newperm')]=cb.checked; });
   adminSetStatus('info','Creating '+username+'\u2026');
   try{
-    const res=await fetch(CONFIG.serverURL+"users",{method:"POST",headers:{"X-Parse-Application-Id":CONFIG.appId,"X-Parse-Javascript-Key":CONFIG.jsKey,"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const data=await res.json();
-    if(!res.ok) throw new Error((data&&data.error)||("HTTP "+res.status));
+    if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
+    await Parse.Cloud.run("createUser", {username:username, password:password, perms:perms});
     adminSetStatus('ok','User \u201c'+username+'\u201d created.');
     $("adminUser").value=''; $("adminPass").value='';
     $("adminCreatePerms").querySelectorAll('[data-newperm]').forEach(cb=>cb.checked=false);
     loadUsers();
-  }catch(err){ adminSetStatus('bad','Create failed: '+((err&&err.message)||err)); }
+  }catch(err){ adminSetStatus('bad','Create failed: '+adminErrMsg(err)); }
 }
 async function loadUsers(){
   const el=$("adminContent"); if(el) el.innerHTML='<div class="rep-empty">Loading users\u2026</div>';
   try{
     if(typeof Parse==='undefined') throw new Error('Parse SDK not loaded.');
     if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
-    const q=new Parse.Query(Parse.User); q.ascending("username"); q.limit(1000);
-    const res=await q.find(); adminLoaded=true; adminUsers=res;
-    if(!res.length){ if(el) el.innerHTML='<div class="rep-empty">No users returned (check that _User \u201cFind\u201d is permitted).</div>'; return; }
+    const rows=await Parse.Cloud.run("listUsers"); adminLoaded=true; adminUsers=rows||[];
+    if(!adminUsers.length){ if(el) el.innerHTML='<div class="rep-empty">No users found.</div>'; return; }
     const head='<tr><th>Username</th>'+PERMS.map(pr=>'<th>'+escapeHtml(pr[1])+'</th>').join('')+'<th>Actions</th></tr>';
-    const body=res.map((o,i)=>'<tr><td>'+escapeHtml((o.get("username")||'').toString())+'</td>'+
-      PERMS.map(pr=>'<td><input type="checkbox" data-u="'+i+'" data-f="'+pr[0]+'"'+(o.get(pr[0])===true?' checked':'')+'></td>').join('')+
+    const body=adminUsers.map((u,i)=>'<tr><td>'+escapeHtml((u.username||'').toString())+'</td>'+
+      PERMS.map(pr=>'<td><input type="checkbox" data-u="'+i+'" data-f="'+pr[0]+'"'+(u[pr[0]]===true?' checked':'')+'></td>').join('')+
       '<td class="err-actions"><button class="btn tiny" data-save="'+i+'">Save</button><button class="btn tiny danger" data-del="'+i+'">Delete</button></td></tr>').join('');
-    if(el) el.innerHTML='<div class="rep-summary-head">Users \u00b7 '+res.length+'</div><div class="rep-tablewrap"><table class="rep-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
+    if(el) el.innerHTML='<div class="rep-summary-head">Users \u00b7 '+adminUsers.length+'</div><div class="rep-tablewrap"><table class="rep-table"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
     el.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>adminSaveUser(+b.getAttribute('data-save')));
     el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>adminDeleteUser(+b.getAttribute('data-del')));
-  }catch(err){ if($("adminContent")) $("adminContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load users: '+escapeHtml(((err&&err.message)||err))+'</div>'; }
+  }catch(err){ if($("adminContent")) $("adminContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load users: '+adminErrMsg(err)+'</div>'; }
 }
 async function adminSaveUser(i){
-  const o=adminUsers[i]; if(!o) return;
-  $("adminContent").querySelectorAll('input[data-u="'+i+'"]').forEach(cb=>o.set(cb.getAttribute('data-f'), cb.checked));
-  adminSetStatus('info','Saving '+o.get("username")+'\u2026');
-  try{ await o.save(); adminSetStatus('ok','Saved permissions for '+o.get("username")+'.'); }
-  catch(err){ adminSetStatus('bad','Save failed: '+((err&&err.message)||err)+' \u2014 editing other users needs _User write permission.'); }
+  const u=adminUsers[i]; if(!u) return;
+  const perms={};
+  $("adminContent").querySelectorAll('input[data-u="'+i+'"]').forEach(cb=>{ perms[cb.getAttribute('data-f')]=cb.checked; });
+  adminSetStatus('info','Saving '+u.username+'\u2026');
+  try{ const res=await Parse.Cloud.run("updateUserPerms", {objectId:u.objectId, perms:perms}); adminUsers[i]=res||u; adminSetStatus('ok','Saved permissions for '+u.username+'.'); }
+  catch(err){ adminSetStatus('bad','Save failed: '+adminErrMsg(err)); }
 }
 async function adminDeleteUser(i){
-  const o=adminUsers[i]; if(!o) return;
-  const cur=Parse.User.current();
-  if(cur && o.id===cur.id){ adminSetStatus('bad','You cannot delete your own account.'); return; }
-  if(!confirm('Delete user \u201c'+o.get("username")+'\u201d? This cannot be undone.')) return;
-  try{ await o.destroy(); adminUsers.splice(i,1); loadUsers(); adminSetStatus('ok','User deleted.'); }
-  catch(err){ adminSetStatus('bad','Delete failed: '+((err&&err.message)||err)+' \u2014 deleting users needs _User delete permission.'); }
+  const u=adminUsers[i]; if(!u) return;
+  if(!confirm('Delete user \u201c'+u.username+'\u201d? This cannot be undone.')) return;
+  try{ await Parse.Cloud.run("deleteUser", {objectId:u.objectId}); adminUsers.splice(i,1); loadUsers(); adminSetStatus('ok','User deleted.'); }
+  catch(err){ adminSetStatus('bad','Delete failed: '+adminErrMsg(err)); }
 }
 function openReports(){
   renderReportSubtabs();
@@ -1804,7 +1799,6 @@ async function signOut(){
 /* ---------- events ---------- */
 $("cfgBtn").onclick=openCfg; $("closeBtn").onclick=closeCfg; $("scrim").onclick=closeCfg;
 $("applyBtn").onclick=applyConfig; $("refreshBtn").onclick=refresh;
-$("search").addEventListener("input",e=>{ state.highlight=e.target.value; render(); });
 $("editSave").onclick=()=>commit(false);
 $("editClear").onclick=()=>commit(true);
 $("editCancel").onclick=closeEdit; $("editClose").onclick=closeEdit; $("editScrim").onclick=closeEdit;

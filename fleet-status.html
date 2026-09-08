@@ -2045,7 +2045,7 @@ function formatAteneaTimestamp(iso) {
 async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000', {
+  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt', {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
   if (!res.ok) throw new Error('Back4App HTTP ' + res.status);

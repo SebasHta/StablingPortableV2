@@ -59,7 +59,7 @@
 
   header{
     display:flex;
-    align-items:flex-start;
+    align-items:center;
     justify-content:space-between;
     flex-wrap:wrap;
     gap:14px;
@@ -275,6 +275,18 @@
   table.alarm-table .al-empty-row td{ padding:16px; color:var(--ink-muted); text-align:center; }
   table.alarm-table thead th.al-sortable{ cursor:pointer; user-select:none; }
   table.alarm-table thead th.al-sortable:hover{ color:var(--ink); }
+  .repeat-count{ display:inline-block; min-width:26px; text-align:center; padding:2px 8px; border-radius:999px; background:rgba(230,80,70,.18); color:#ff9b91; font-weight:600; }
+  #repeatWrap .alarm-table-actions label{ color:var(--ink-muted); font-size:13px; display:flex; align-items:center; gap:8px; }
+  #repeatWrap .alarm-table-actions select{ background:var(--bg); color:var(--ink); border:1px solid var(--panel-border); border-radius:6px; padding:4px 8px; }
+  .repeat-badge{ display:inline-block; min-width:18px; text-align:center; padding:1px 6px; border-radius:999px; background:rgba(230,80,70,.9); color:#fff; font-size:11px; font-weight:700; margin-left:4px; }
+  .repeat-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; }
+  .repeat-drawer{ position:fixed; top:0; right:0; height:100vh; width:min(600px,94vw); background:var(--panel); border-left:1px solid var(--panel-border); box-shadow:-10px 0 30px rgba(0,0,0,.45); z-index:61; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; }
+  .repeat-drawer.open{ transform:translateX(0); }
+  .repeat-drawer-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--panel-border); flex:0 0 auto; }
+  .repeat-drawer-head h2{ margin:0; font-size:17px; }
+  .repeat-drawer-close{ background:transparent; border:0; color:var(--ink-muted); font-size:18px; cursor:pointer; line-height:1; }
+  .repeat-drawer-close:hover{ color:var(--ink); }
+  #repeatWrap{ flex:1 1 auto; overflow:auto; padding:10px 14px; }
   .al-sortind{ font-size:10px; opacity:.9; }
   table.alarm-table tbody tr{
     border-bottom:1px solid var(--panel-border);
@@ -332,6 +344,7 @@
   .header-actions{
     display:flex;
     align-items:center;
+    justify-content:flex-end;
     gap:12px;
     flex-wrap:wrap;
   }
@@ -841,6 +854,7 @@
         <div class="badges" id="badges"></div>
         <button class="btn-manual" id="dailyResetBtn" type="button" title="Downloads a CSV of every alarm, then acknowledges them all in Live_Alarms — except Out of Service units, left untouched">Reset Alarms</button>
         <button class="btn-manual" id="manualBtn" type="button">Set unit status</button>
+        <button class="btn-manual" id="repeatOpenBtn" type="button">Repeat faults <span class="repeat-badge" id="repeatBadge" hidden></span></button>
       </div>
     </header>
 
@@ -866,6 +880,15 @@
     <div class="tab-panel" id="tabPanelList" role="tabpanel" aria-labelledby="tabBtnList" hidden>
       <div id="alarmListWrap"></div>
     </div>
+
+    <div class="repeat-scrim" id="repeatScrim" hidden></div>
+    <aside class="repeat-drawer" id="repeatDrawer" aria-hidden="true" aria-label="Repeat faults">
+      <div class="repeat-drawer-head">
+        <h2>↻ Repeat faults</h2>
+        <button class="repeat-drawer-close" id="repeatCloseBtn" type="button" aria-label="Close">✕</button>
+      </div>
+      <div id="repeatWrap"></div>
+    </aside>
 
     <footer id="footer"></footer>
   </div>
@@ -1474,6 +1497,8 @@ const STATUS_DOT_CLASS = { failure: 'crit', review: 'warn', maintenance: 'maint'
 
 let liveRefreshTimer = null;
 let lastUnitsByTu = {};
+let lastLiveRecords = [];
+let repeatMinCount = 3;
 let alarmColFilters = { tu:'', sev:'', code:'', msg:'', ts:'', ack:'' };
 let alarmSort = { col: null, dir: 'asc' };
 let alarmListBase = [];
@@ -2161,6 +2186,7 @@ async function loadFleet() {
   } catch (err) {
     console.warn('Back4App fetch failed, falling back to roster data:', err);
   }
+  lastLiveRecords = liveRecords || [];
 
   // TU_Status (Out of Service) is fetched independently of Live_Alarms and
   // applied the same way regardless of which branch below ends up running
@@ -2504,6 +2530,7 @@ function render(json) {
   // Kept in sync with the tile grid on every render, regardless of which
   // tab is currently visible — see "TABS (Tiles / List)" below.
   renderAlarmList(units);
+  renderRepeatFaults();
 }
 
 /*
@@ -2542,6 +2569,13 @@ function initTabs() {
     });
   });
   apply();
+  const rob = document.getElementById('repeatOpenBtn');
+  const rcb = document.getElementById('repeatCloseBtn');
+  const rsc = document.getElementById('repeatScrim');
+  if (rob) rob.addEventListener('click', openRepeatDrawer);
+  if (rcb) rcb.addEventListener('click', closeRepeatDrawer);
+  if (rsc) rsc.addEventListener('click', closeRepeatDrawer);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRepeatDrawer(); });
 }
 
 function ateneaSortMs(v){
@@ -2614,6 +2648,69 @@ function renderAlarmTbody(){
   wireAlarmRows(wrap);
   const shown = document.getElementById('alShownCount'); if (shown) shown.textContent = visible.length;
   const eb = document.getElementById('alarmListExportBtn'); if (eb) eb.disabled = !visible.length;
+}
+function openRepeatDrawer(){
+  renderRepeatFaults();
+  const d = document.getElementById('repeatDrawer'), sc = document.getElementById('repeatScrim');
+  if (sc) sc.hidden = false;
+  if (d) { d.classList.add('open'); d.setAttribute('aria-hidden', 'false'); }
+}
+function closeRepeatDrawer(){
+  const d = document.getElementById('repeatDrawer'), sc = document.getElementById('repeatScrim');
+  if (sc) sc.hidden = true;
+  if (d) { d.classList.remove('open'); d.setAttribute('aria-hidden', 'true'); }
+}
+function computeRepeatFaults(){
+  const recs = lastLiveRecords || [];
+  const map = {};
+  recs.forEach(rec => {
+    if (isFlagOff(rec)) return; // count fault occurrences (ON), not clears
+    const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
+    if (!tu) return;
+    const code = pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '(no code)';
+    const key = String(tu).trim() + '||' + String(code).trim().toLowerCase();
+    let e = map[key];
+    if (!e) e = map[key] = { tu: String(tu).trim(), code: String(code).trim(), count: 0, lastTs: '', lastMsg: '', status: null, lastMs: -1 };
+    e.count++;
+    const tsRaw = normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp));
+    const ms = ateneaSortMs(tsRaw);
+    if (ms >= e.lastMs) { e.lastMs = ms; e.lastTs = tsRaw; e.lastMsg = pickField(rec, LIVE_ALARMS_FIELDS.message) || ''; e.status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)); }
+  });
+  return Object.values(map);
+}
+function renderRepeatFaults(){
+  const wrap = document.getElementById('repeatWrap');
+  if (!wrap) return;
+  const rows = computeRepeatFaults().filter(e => e.count >= repeatMinCount)
+    .sort((a, b) => b.count - a.count || String(a.tu).localeCompare(String(b.tu)));
+  const badge = document.getElementById('repeatBadge');
+  if (badge) { badge.textContent = rows.length; badge.hidden = !rows.length; }
+  const sel = `<label>Min occurrences <select id="repeatMinSel">${[2,3,5,10].map(n => `<option value="${n}"${repeatMinCount === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`;
+  let html = `<div class="alarm-table-head">
+    <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)</span></div>
+    <div class="alarm-table-actions">${sel}</div>
+  </div>`;
+  if (!rows.length) {
+    html += `<div class="alarm-table-scroll"><div class="alarm-table-empty">No unit has ${repeatMinCount} or more of the same fault in the latest records.</div></div>`;
+  } else {
+    html += `<div class="alarm-table-scroll"><table class="alarm-table">
+      <thead><tr><th>TU</th><th>Fault code</th><th>Occurrences</th><th>Last seen</th></tr></thead>
+      <tbody>${rows.map(e => `
+        <tr data-tu="${escapeAttr(e.tu)}" tabindex="0" role="button" aria-label="Open ${escapeAttr(e.tu)} details">
+          <td class="al-tu">${escapeHtml(e.tu)}</td>
+          <td>${escapeHtml(e.code)}</td>
+          <td><span class="repeat-count">${e.count}</span></td>
+          <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(e.lastTs))}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+  wrap.innerHTML = html;
+  const ms = document.getElementById('repeatMinSel');
+  if (ms) ms.addEventListener('change', () => { repeatMinCount = parseInt(ms.value, 10) || 3; renderRepeatFaults(); });
+  wrap.querySelectorAll('tbody tr[data-tu]').forEach(tr => {
+    tr.addEventListener('click', () => openUnitModal(tr.dataset.tu));
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(tr.dataset.tu); } });
+  });
 }
 function renderAlarmList(units) {
   const wrap = document.getElementById('alarmListWrap');

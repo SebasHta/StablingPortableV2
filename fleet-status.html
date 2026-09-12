@@ -278,6 +278,7 @@
   .repeat-count{ display:inline-block; min-width:26px; text-align:center; padding:2px 8px; border-radius:999px; background:rgba(230,80,70,.18); color:#ff9b91; font-weight:600; }
   #repeatWrap .alarm-table-actions label{ color:var(--ink-muted); font-size:13px; display:flex; align-items:center; gap:8px; }
   #repeatWrap .alarm-table-actions select{ background:var(--bg); color:var(--ink); border:1px solid var(--panel-border); border-radius:6px; padding:4px 8px; }
+  .tt-alarm-ts{ opacity:.75; font-size:11px; color:var(--ink-muted); }
   .repeat-badge{ display:inline-block; min-width:18px; text-align:center; padding:1px 6px; border-radius:999px; background:rgba(230,80,70,.9); color:#fff; font-size:11px; font-weight:700; margin-left:4px; }
   .repeat-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; }
   .repeat-drawer{ position:fixed; top:0; right:0; height:100vh; width:min(600px,94vw); background:var(--panel); border-left:1px solid var(--panel-border); box-shadow:-10px 0 30px rgba(0,0,0,.45); z-index:61; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; }
@@ -852,7 +853,6 @@
       </div>
       <div class="header-actions">
         <div class="badges" id="badges"></div>
-        <button class="btn-manual" id="dailyResetBtn" type="button" title="Downloads a CSV of every alarm, then acknowledges them all in Live_Alarms — except Out of Service units, left untouched">Reset Alarms</button>
         <button class="btn-manual" id="manualBtn" type="button">Set unit status</button>
         <button class="btn-manual" id="repeatOpenBtn" type="button">Repeat faults <span class="repeat-badge" id="repeatBadge" hidden></span></button>
       </div>
@@ -1430,6 +1430,7 @@ const BACK4APP_CONFIG = {
 const LIVE_ALARMS_FIELDS = {
   tu: ['tu'],
   severity: ['severity'],
+  location: ['location'],
   // "code" is the short label shown next to the TU in the ticker (e.g.
   // "AM103 — …") and "message" is the longer tooltip detail. Schema has
   // both `description` and `message` as free-text fields with no sample
@@ -1499,7 +1500,7 @@ let liveRefreshTimer = null;
 let lastUnitsByTu = {};
 let lastLiveRecords = [];
 let repeatMinCount = 3;
-let alarmColFilters = { tu:'', sev:'', code:'', msg:'', ts:'', ack:'' };
+let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', ts:'', ack:'' };
 let alarmSort = { col: null, dir: 'asc' };
 let alarmListBase = [];
 let alarmListVisible = [];
@@ -1979,7 +1980,9 @@ async function runDailyReset() {
 }
 
 function initDailyResetButton() {
-  document.getElementById('dailyResetBtn').addEventListener('click', () => {
+  const dailyResetBtn = document.getElementById('dailyResetBtn');
+  if (!dailyResetBtn) return;
+  dailyResetBtn.addEventListener('click', () => {
     const ok = confirm(
       'Run the daily reset now?\n\n' +
       'This will download a CSV of every current alarm (acknowledged and not), then set ' +
@@ -2226,10 +2229,8 @@ async function loadFleet() {
   let unmatched = 0;
   let flaggedOffCount = 0;
 
-  // ── OFF ⇒ acknowledge the matching ON ────────────────────────────────
-  // Gather the identity of every "off" record this refresh. An ON record
-  // whose (TU + alarm id/code) matches one of these is treated as
-  // acknowledged — the OFF is the system telling us that alarm cleared.
+  // OFF ⇒ acknowledge the matching ON. Keyed on TU + alarm id/code, so an
+  // "off" record marks the alarm it clears as acknowledged.
   const offKeys = new Set();
   liveRecords.forEach(rec => {
     if (!isFlagOff(rec)) return;
@@ -2241,7 +2242,7 @@ async function loadFleet() {
   liveRecords.forEach(rec => {
     const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
     if (!tu) { unmatched++; return; }
-    if (isFlagOff(rec)) { flaggedOffCount++; return; } // OFF rows aren't shown; they acknowledge the matching ON (offKeys above)
+    if (isFlagOff(rec)) { flaggedOffCount++; return; }
     const storedAck = isAcknowledgedTrue(rec);
     const autoAck = offKeys.has(alarmMatchKey(rec, tu));
     if (autoAck && !storedAck && rec.objectId) pendingAutoAck.push(rec.objectId);
@@ -2253,15 +2254,14 @@ async function loadFleet() {
       alarm_key: pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'alarm',
       object_id: rec.objectId,
       acknowledged: storedAck || autoAck,
+      location: pickField(rec, LIVE_ALARMS_FIELDS.location) || '',
       atenea_timestamp: normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp))
     };
     if (!byTu[tu]) byTu[tu] = [];
     byTu[tu].push(entry);
   });
 
-  // Persist each auto-acknowledgement back to Back4App once, so it sticks
-  // even if the OFF record is later cleared. Guarded so the same record
-  // isn't rewritten every refresh.
+  // Persist each auto-acknowledgement once per record.
   pendingAutoAck.forEach(oid => {
     if (autoAckedThisSession.has(oid)) return;
     autoAckedThisSession.add(oid);
@@ -2489,12 +2489,13 @@ function render(json) {
     // them — see attachTooltips() below. HTML-escaped like the other data-*
     // attributes so it round-trips safely through the attribute value.
     const alarmsJson = escapeAttr(JSON.stringify((u.alarms || []).map(a => ({
-      status: a.status, code: a.alert_code || '', msg: a.alert_message || '', ack: !!a.acknowledged
+      status: a.status, code: a.alert_code || '', msg: a.alert_message || '', ack: !!a.acknowledged, ts: a.atenea_timestamp || ''
     }))));
     return `<div class="tile ${escapeAttr(u.status)}" role="listitem" tabindex="0"
       data-tu="${escapeAttr(u.tu)}" data-status="${escapeAttr(u.status)}"
       data-code="${escapeAttr(u.alert_code || '')}" data-msg="${escapeAttr(u.alert_message || '')}"
       data-ack="${u.acknowledged ? '1' : '0'}" data-manual="${u.manual ? '1' : '0'}"
+      data-ts="${escapeAttr(u.atenea_timestamp || '')}"
       data-alarms="${alarmsJson}"
       aria-label="${escapeAttr(u.tu)} — ${escapeAttr(label)}${ackSuffix}${manualSuffix}${u.alert_message ? ': ' + escapeAttr(u.alert_message) : ''}. Press Enter for details.">
       ${escapeHtml(u.tu)}${u.acknowledged ? '<span class="ack-badge" title="Acknowledged">✓</span>' : ''}${u.manual ? '<span class="manual-badge" title="Manually set">⚑</span>' : ''}
@@ -2595,6 +2596,7 @@ function sortAlarms(rows){
     sev: (a,b)=> (SEVERITY_PRIORITY[a.status]||0)-(SEVERITY_PRIORITY[b.status]||0),
     code:(a,b)=> String(a.alert_code||'').localeCompare(String(b.alert_code||'')),
     msg: (a,b)=> String(a.alert_message||'').localeCompare(String(b.alert_message||'')),
+    loc: (a,b)=> String(a.location||'').localeCompare(String(b.location||'')),
     ts:  (a,b)=> ateneaSortMs(a.atenea_timestamp)-ateneaSortMs(b.atenea_timestamp),
     ack: (a,b)=> Number(a.acknowledged)-Number(b.acknowledged)
   }[col];
@@ -2616,6 +2618,7 @@ function applyAlarmColFilters(rows){
     if (f.sev && (STATUS_LABEL[r.status] || r.status) !== f.sev) return false;
     if (f.code && !inc(r.alert_code, f.code)) return false;
     if (f.msg && !inc(r.alert_message, f.msg)) return false;
+    if (f.loc && !inc(r.location, f.loc)) return false;
     if (f.ts && !inc(formatAteneaTimestamp(r.atenea_timestamp), f.ts)) return false;
     if (f.ack === 'yes' && !r.acknowledged) return false;
     if (f.ack === 'no' && r.acknowledged) return false;
@@ -2629,6 +2632,7 @@ function alarmRowHtml(r){
           <td><span class="al-sev"><span class="dot ${STATUS_DOT_CLASS[r.status] || ''}"></span>${escapeHtml(STATUS_LABEL[r.status] || r.status)}</span></td>
           <td>${escapeHtml(r.alert_code || '')}</td>
           <td class="al-msg">${escapeHtml(r.alert_message || '')}</td>
+          <td>${escapeHtml(r.location || '')}</td>
           <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(r.atenea_timestamp))}</td>
           <td><span class="al-ack ${r.acknowledged ? 'yes' : 'no'}">${r.acknowledged ? 'Yes' : 'No'}</span></td>
         </tr>`;
@@ -2644,7 +2648,7 @@ function renderAlarmTbody(){
   const tbody = wrap.querySelector('table.alarm-table tbody'); if (!tbody) return;
   const visible = sortAlarms(applyAlarmColFilters(alarmListBase || [])); alarmListVisible = visible;
   tbody.innerHTML = visible.length ? visible.map(alarmRowHtml).join('')
-    : `<tr class="al-empty-row"><td colspan="6">No alarms match these filters.</td></tr>`;
+    : `<tr class="al-empty-row"><td colspan="7">No alarms match these filters.</td></tr>`;
   wireAlarmRows(wrap);
   const shown = document.getElementById('alShownCount'); if (shown) shown.textContent = visible.length;
   const eb = document.getElementById('alarmListExportBtn'); if (eb) eb.disabled = !visible.length;
@@ -2670,11 +2674,11 @@ function computeRepeatFaults(){
     const code = pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '(no code)';
     const key = String(tu).trim() + '||' + String(code).trim().toLowerCase();
     let e = map[key];
-    if (!e) e = map[key] = { tu: String(tu).trim(), code: String(code).trim(), count: 0, lastTs: '', lastMsg: '', status: null, lastMs: -1 };
+    if (!e) e = map[key] = { tu: String(tu).trim(), code: String(code).trim(), count: 0, lastTs: '', lastMsg: '', location: '', status: null, lastMs: -1 };
     e.count++;
     const tsRaw = normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp));
     const ms = ateneaSortMs(tsRaw);
-    if (ms >= e.lastMs) { e.lastMs = ms; e.lastTs = tsRaw; e.lastMsg = pickField(rec, LIVE_ALARMS_FIELDS.message) || ''; e.status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)); }
+    if (ms >= e.lastMs) { e.lastMs = ms; e.lastTs = tsRaw; e.lastMsg = pickField(rec, LIVE_ALARMS_FIELDS.message) || ''; e.location = pickField(rec, LIVE_ALARMS_FIELDS.location) || ''; e.status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)); }
   });
   return Object.values(map);
 }
@@ -2694,11 +2698,12 @@ function renderRepeatFaults(){
     html += `<div class="alarm-table-scroll"><div class="alarm-table-empty">No unit has ${repeatMinCount} or more of the same fault in the latest records.</div></div>`;
   } else {
     html += `<div class="alarm-table-scroll"><table class="alarm-table">
-      <thead><tr><th>TU</th><th>Fault code</th><th>Occurrences</th><th>Last seen</th></tr></thead>
+      <thead><tr><th>TU</th><th>Fault code</th><th>Location</th><th>Occurrences</th><th>Last seen</th></tr></thead>
       <tbody>${rows.map(e => `
         <tr data-tu="${escapeAttr(e.tu)}" tabindex="0" role="button" aria-label="Open ${escapeAttr(e.tu)} details">
           <td class="al-tu">${escapeHtml(e.tu)}</td>
           <td>${escapeHtml(e.code)}</td>
+          <td>${escapeHtml(e.location || '')}</td>
           <td><span class="repeat-count">${e.count}</span></td>
           <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(e.lastTs))}</td>
         </tr>`).join('')}</tbody>
@@ -2716,12 +2721,50 @@ function renderAlarmList(units) {
   const wrap = document.getElementById('alarmListWrap');
   if (!wrap) return;
 
+  // One row per alarm, not per record. An alarm that has both an ON and an
+  // OFF record is a single event: the OFF clears it, so the pair collapses to
+  // one row (shown acknowledged) instead of appearing twice. Records without
+  // a partner show on their own.
   const rows = [];
-  units.forEach(u => {
-    (u.alarms || []).forEach(a => {
-      rows.push({ tu: u.tu, unitStatus: u.status, ...a });
-    });
+  const byPair = new Map();
+  (lastLiveRecords || []).forEach(rec => {
+    const tuRaw = pickField(rec, LIVE_ALARMS_FIELDS.tu);
+    if (!tuRaw) return;
+    const tu = String(tuRaw).trim();
+    const off = isFlagOff(rec);
+    const key = alarmMatchKey(rec, tu);
+    const ts = normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp));
+    const row = {
+      tu,
+      unitStatus: lastUnitsByTu[tu] ? lastUnitsByTu[tu].status : classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)),
+      status: classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)),
+      alert_code: pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'Active alarm',
+      alert_message: pickField(rec, LIVE_ALARMS_FIELDS.message) || '',
+      location: pickField(rec, LIVE_ALARMS_FIELDS.location) || '',
+      acknowledged: isAcknowledgedTrue(rec),
+      atenea_timestamp: ts,
+      object_id: rec.objectId,
+      cleared: off
+    };
+    const existing = byPair.get(key);
+    if (!existing) { byPair.set(key, row); rows.push(row); return; }
+    // Merge the partner into the row already held for this alarm.
+    existing.cleared = existing.cleared || off;
+    existing.acknowledged = existing.acknowledged || row.acknowledged || existing.cleared;
+    // Keep the ON record's details/identity, but surface the latest timestamp.
+    if (off) {
+      if (ateneaSortMs(ts) > ateneaSortMs(existing.atenea_timestamp)) existing.atenea_timestamp = ts;
+      if (!existing.location) existing.location = row.location;
+    } else {
+      existing.status = row.status;
+      existing.alert_code = row.alert_code;
+      existing.alert_message = row.alert_message || existing.alert_message;
+      existing.location = row.location || existing.location;
+      existing.object_id = row.object_id;
+      if (ateneaSortMs(existing.atenea_timestamp) === 0) existing.atenea_timestamp = ts;
+    }
   });
+  rows.forEach(r => { if (r.cleared) r.acknowledged = true; });
 
   const ackCount = rows.filter(r => r.acknowledged).length;
   const unackCount = rows.length - ackCount;
@@ -2776,20 +2819,21 @@ function renderAlarmList(units) {
     html += `<div class="alarm-table-scroll"><table class="alarm-table">
       <thead>
         <tr>
-          ${sortTh('tu','TU')}${sortTh('sev','Severity')}${sortTh('code','Alarm code')}${sortTh('msg','Message')}${sortTh('ts','Timestamp')}${sortTh('ack','Acknowledged')}
+          ${sortTh('tu','TU')}${sortTh('sev','Severity')}${sortTh('code','Alarm code')}${sortTh('msg','Message')}${sortTh('loc','Location')}${sortTh('ts','Timestamp')}${sortTh('ack','Acknowledged')}
         </tr>
         <tr class="al-filter-row">
           <th>${colInput('tu')}</th>
           <th>${sevSelect}</th>
           <th>${colInput('code')}</th>
           <th>${colInput('msg')}</th>
+          <th>${colInput('loc')}</th>
           <th>${colInput('ts')}</th>
           <th>${ackSelect}</th>
         </tr>
       </thead>
       <tbody>${
         visible.length ? visible.map(alarmRowHtml).join('')
-                       : `<tr class="al-empty-row"><td colspan="6">No alarms match these filters.</td></tr>`
+                       : `<tr class="al-empty-row"><td colspan="7">No alarms match these filters.</td></tr>`
       }</tbody>
     </table></div>`;
   }
@@ -2830,7 +2874,7 @@ function renderAlarmList(units) {
 // consistent, just scoped to what's currently filtered/visible here.
 function downloadAlarmListCsv(rows) {
   const snapshotAt = new Date().toISOString();
-  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'AteneaTimestamp', 'Acknowledged', 'Object ID', 'Exported at'];
+  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'Location', 'AteneaTimestamp', 'Acknowledged', 'Object ID', 'Exported at'];
   const lines = [header.map(csvEscape).join(',')];
   rows.forEach(r => {
     lines.push([
@@ -2839,6 +2883,7 @@ function downloadAlarmListCsv(rows) {
       STATUS_LABEL[r.status] || r.status,
       r.alert_code || '',
       r.alert_message || '',
+      r.location || '',
       r.atenea_timestamp || '',
       r.acknowledged ? 'Yes' : 'No',
       r.object_id || '',
@@ -2860,6 +2905,7 @@ function attachTooltips(grid) {
     const msg = tile.dataset.msg;
     const acked = tile.dataset.ack === '1';
     const manual = tile.dataset.manual === '1';
+    const ts = tile.dataset.ts;
     const statusLabel = (STATUS_LABEL[status] || status) + (acked ? ' (acknowledged)' : '') + (manual ? ' (manually set)' : '');
 
     let alarms = [];
@@ -2874,10 +2920,10 @@ function attachTooltips(grid) {
         <li class="tt-alarm-item">
           <span class="tt-alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}</span>
           ${a.ack ? '<span class="tt-alarm-ack"> · acknowledged</span>' : ''}<br>
-          <strong>${escapeHtml(a.code || '')}</strong>${a.msg ? '<br>' + escapeHtml(a.msg) : ''}
+          <strong>${escapeHtml(a.code || '')}</strong>${a.msg ? '<br>' + escapeHtml(a.msg) : ''}${a.ts ? '<br><span class="tt-alarm-ts">' + escapeHtml(formatAteneaTimestamp(a.ts)) + '</span>' : ''}
         </li>`).join('') + `</ul>`;
     } else if (code) {
-      detailHtml = `<div class="tt-msg"><strong>${escapeHtml(code)}</strong><br>${escapeHtml(msg || '')}</div>`;
+      detailHtml = `<div class="tt-msg"><strong>${escapeHtml(code)}</strong><br>${escapeHtml(msg || '')}${ts ? '<br><span class="tt-alarm-ts">' + escapeHtml(formatAteneaTimestamp(ts)) + '</span>' : ''}</div>`;
     } else {
       detailHtml = '';
     }

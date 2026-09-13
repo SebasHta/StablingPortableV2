@@ -664,7 +664,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "4.8";
+const APP_VERSION = "5.0";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -1509,10 +1509,12 @@ function buildFleetReportHTML(d){
     {label:"Calibration NOK (sensors)",value:d.calibration,color:CH.amber}
   ],{ink:"#111",dim:"#555",track:"#eaeaea"});
   const sumUnits=d.units.filter(u=>u.complete||u.inProgress).sort((a,b)=>{ const ra=a.inProgress?1:0, rb=b.inProgress?1:0; if(ra!==rb) return ra-rb; return a.id.localeCompare(b.id); });
-  let sumFault=0, sumDone=0;
+  let sumFault=0, sumDone=0, sumWater=0;
   const rows=sumUnits.map(u=>{ const f=u.replReq.length, dn=u.replDone.length; sumFault+=f; sumDone+=dn;
-    return '<tr><td>'+esc(u.id)+(u.inProgress?' <span style="color:#b8860b">(in progress)</span>':'')+'</td><td'+(f>0?' class="fr-fail"':'')+'>'+f+'</td><td>'+dn+'</td></tr>'; }).join('')
-    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td></tr>';
+    const wd=waterDoorList(u); sumWater+=wd.length;
+    return '<tr><td>'+esc(u.id)+(u.inProgress?' <span style="color:#b8860b">(in progress)</span>':'')+'</td><td'+(f>0?' class="fr-fail"':'')+'>'+f+'</td><td>'+dn+'</td>'
+      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td></tr>'; }).join('')
+    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td></tr>';
   return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Report</h1></div>'
     +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+d.total+' units inspected</div></div>'
     +'<div class="fr-kpis"><div class="fr-kpi"><div class="v">'+d.completed+' / '+APC_FLEET_TOTAL+'</div><div class="k">Units completed</div></div>'
@@ -1521,25 +1523,54 @@ function buildFleetReportHTML(d){
     +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div>'+'<div class="fr-kpi"><div class="v">'+d.passed+' / '+d.total+'</div><div class="k">Units passing (all checks)</div></div>'+'<div class="fr-kpi">'+'<div class="v">'+d.inProgress+'</div><div class="k">Units in progress</div></div></div>'
     +'<div class="fr-charts"><div class="fr-chart"><h3>Completion</h3>'+donut+'</div><div class="fr-chart grow"><h3>Issues across fleet</h3>'+bars+'</div></div>'
     +'<div class="fr-chart" style="margin-bottom:22px"><h3>Calibration outcomes · adjusted sensors</h3>'+pieCard(d,{ink:"#111",dim:"#555",ring:"#ddd"})+'</div>'+'<h3 class="fr-th">Completed &amp; in-progress units</h3>'
-    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div class="fr-foot">Depot Control \u00b7 APC Fleet report \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
 }
 function generateApcReport(){ if(!reportsData) return; $("fleetReport").innerHTML=buildFleetReportHTML(reportsData); const _t=document.title; document.title="Fleet_Report"; window.print(); document.title=_t; }
+function waterDoorList(u){
+  const seen=[]; (u.water||[]).forEach(x=>{ const loc=((x.car||'')+' '+(x.door||'')).trim(); if(loc && seen.indexOf(loc)===-1) seen.push(loc); });
+  return seen;
+}
 function apcSummaryHTML(d){
   const units=d.units.filter(u=>u.complete||u.inProgress).sort((a,b)=>{
     const ra=a.inProgress?1:0, rb=b.inProgress?1:0; if(ra!==rb) return ra-rb; return a.id.localeCompare(b.id);
   });
   if(!units.length) return '<div class="rep-empty">No completed or in-progress units yet.</div>';
-  let sumFault=0, sumDone=0;
+  let sumFault=0, sumDone=0, sumWater=0;
   const rows=units.map(u=>{
     const fault=u.replReq.length, done=u.replDone.length; sumFault+=fault; sumDone+=done;
     const tag=u.inProgress?' <span class="rep-prog-tag">in progress</span>':'';
-    return '<tr><td>'+escapeHtml(u.id)+tag+'</td><td class="'+(fault>0?'flag':'')+'">'+fault+'</td><td>'+done+'</td></tr>';
+    const wd=waterDoorList(u); if(wd.length) sumWater+=wd.length;
+    return '<tr><td>'+escapeHtml(u.id)+tag+'</td><td class="'+(fault>0?'flag':'')+'">'+fault+'</td><td>'+done+'</td>'+
+      '<td class="'+(wd.length?'flag':'')+'">'+(wd.length?escapeHtml(wd.join(', ')):'\u2014')+'</td></tr>';
   }).join('');
-  const total='<tr class="rep-total"><td>Total</td><td class="'+(sumFault>0?'flag':'')+'">'+sumFault+'</td><td>'+sumDone+'</td></tr>';
+  const total='<tr class="rep-total"><td>Total</td><td class="'+(sumFault>0?'flag':'')+'">'+sumFault+'</td><td>'+sumDone+'</td><td class="'+(sumWater>0?'flag':'')+'">'+(sumWater||'\u2014')+(sumWater?' door(s)':'')+'</td></tr>';
   return '<div class="rep-summary-head">Fleet summary \u00b7 '+units.length+' completed / in-progress unit(s)</div>'+
-    '<div class="rep-tablewrap" style="max-width:660px"><table class="rep-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th></tr></thead><tbody>'+rows+total+'</tbody></table></div>'+
+    '<div class="rep-tablewrap" style="max-width:860px"><table class="rep-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+total+'</tbody></table></div>'+
+    '<div style="max-width:860px;margin-top:14px;display:flex;justify-content:flex-end"><button class="btn primary" id="apcSummaryPdf" type="button" style="flex:0 0 auto;width:auto">Export summary as PDF</button></div>'+
     '<div class="rep-empty" style="padding-top:10px">Select a unit above for full detail.</div>';
+}
+function wireSummaryPdf(){ const b=$("apcSummaryPdf"); if(b) b.onclick=exportSummaryPdf; }
+function buildSummaryReportHTML(d){
+  const esc=escapeHtml, now=new Date();
+  const units=d.units.filter(u=>u.complete||u.inProgress).sort((a,b)=>{
+    const ra=a.inProgress?1:0, rb=b.inProgress?1:0; if(ra!==rb) return ra-rb; return a.id.localeCompare(b.id);
+  });
+  let sumFault=0, sumDone=0, sumWater=0;
+  const rows=units.map(u=>{ const f=u.replReq.length, dn=u.replDone.length; sumFault+=f; sumDone+=dn;
+    const wd=waterDoorList(u); sumWater+=wd.length;
+    return '<tr><td>'+esc(u.id)+(u.inProgress?' <span style="color:#b8860b">(in progress)</span>':'')+'</td><td'+(f>0?' class="fr-fail"':'')+'>'+f+'</td><td>'+dn+'</td>'
+      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td></tr>'; }).join('')
+    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td></tr>';
+  return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Summary</h1></div>'
+    +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+units.length+' completed / in-progress</div></div>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div class="fr-foot">Depot Control \u00b7 APC Fleet summary \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
+}
+function exportSummaryPdf(){
+  if(!reportsData) return;
+  $("fleetReport").innerHTML=buildSummaryReportHTML(reportsData);
+  const _t=document.title; document.title="Fleet_Summary"; window.print(); document.title=_t;
 }
 function renderApcFleet(){
   const d=reportsData; if(!d){ loadReports(); return; }
@@ -1558,7 +1589,8 @@ function renderApcFleet(){
     chartsHTML(d)+
     '<div class="rep-select"><label for="apcUnitSelect">Unit</label><select id="apcUnitSelect">'+opts+'</select></div>'+
     '<div id="apcUnitDetail">'+apcSummaryHTML(d)+'</div>';
-  $("apcUnitSelect").onchange=e=>{ const u=d.units.find(x=>x.id===e.target.value); if(u) renderApcUnit(u); else $("apcUnitDetail").innerHTML=apcSummaryHTML(d); };
+  wireSummaryPdf();
+  $("apcUnitSelect").onchange=e=>{ const u=d.units.find(x=>x.id===e.target.value); if(u) renderApcUnit(u); else { $("apcUnitDetail").innerHTML=apcSummaryHTML(d); wireSummaryPdf(); } };
   $("apcReportBtn").onclick=generateApcReport;
 }
 function renderApcUnit(u){

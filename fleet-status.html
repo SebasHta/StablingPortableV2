@@ -278,6 +278,9 @@
   .repeat-count{ display:inline-block; min-width:26px; text-align:center; padding:2px 8px; border-radius:999px; background:rgba(230,80,70,.18); color:#ff9b91; font-weight:600; }
   #repeatWrap .alarm-table-actions label{ color:var(--ink-muted); font-size:13px; display:flex; align-items:center; gap:8px; }
   #repeatWrap .alarm-table-actions select{ background:var(--bg); color:var(--ink); border:1px solid var(--panel-border); border-radius:6px; padding:4px 8px; }
+  .modal-detail .alarm-when{ margin-top:6px; font-size:12px; color:var(--ink-muted); }
+  .modal-detail.is-ack{ opacity:.68; }
+  .alarm-ack-btn{ margin-top:10px; width:100%; }
   .tt-alarm-ts{ opacity:.75; font-size:11px; color:var(--ink-muted); }
   .repeat-badge{ display:inline-block; min-width:18px; text-align:center; padding:1px 6px; border-radius:999px; background:rgba(230,80,70,.9); color:#fff; font-size:11px; font-weight:700; margin-left:4px; }
   .repeat-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; }
@@ -3264,6 +3267,8 @@ function renderModalBody() {
   const hasFault = rawStatus === 'failure' || rawStatus === 'review' || rawStatus === 'maintenance';
   const statusLabel = STATUS_LABEL[rawStatus] || rawStatus;
   const activeAlarms = (u.alarms || []).filter(a => !a.acknowledged);
+  // Newest first, so the most recent fault is at the top of the list.
+  const allAlarms = (u.alarms || []).slice().sort((a, b) => ateneaSortMs(b.atenea_timestamp) - ateneaSortMs(a.atenea_timestamp));
 
   let html = `<h2 class="modal-tu" id="modalTu">${escapeHtml(u.tu)}</h2>`;
   html += `<div class="modal-status ${escapeAttr(rawStatus)}">${escapeHtml(statusLabel)}${u.manual ? ' · manual' : ''}${u.tu_status ? ' · Back4App' : ''}</div>`;
@@ -3297,19 +3302,25 @@ function renderModalBody() {
         ${u.underlying.alert_code ? `<br>${escapeHtml(u.underlying.alert_code)}${u.underlying.alert_message ? ' — ' + escapeHtml(u.underlying.alert_message) : ''}` : ''}
       </div>`;
     }
-  } else if (hasFault && activeAlarms.length > 1) {
-    // Several active alarms on this unit — list all of them, not just the
-    // one (worst) driving the tile's own color/status.
-    html += `<div class="modal-alarm-list">` + activeAlarms.map(a => `
-      <div class="modal-detail">
-        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}</div>
+  } else if (allAlarms.length) {
+    // Every alarm on this unit — each with its own timestamp and its own
+    // acknowledge control, so any one can be actioned (not just the worst).
+    html += `<div class="modal-alarm-list">` + allAlarms.map((a, i) => `
+      <div class="modal-detail${a.acknowledged ? ' is-ack' : ''}">
+        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}${a.acknowledged ? ' · acknowledged' : ''}</div>
         <div class="code">${escapeHtml(a.alert_code || 'Active alarm')}</div>
         <div class="msg">${escapeHtml(a.alert_message || 'No further detail available.')}</div>
+        ${a.location ? `<div class="msg" style="opacity:.75">Location: ${escapeHtml(a.location)}</div>` : ''}
+        <div class="alarm-when">${escapeHtml(formatAteneaTimestamp(a.atenea_timestamp))}</div>
+        <button class="btn ${a.acknowledged ? 'btn-unack' : 'btn-ack'} alarm-ack-btn" data-alarm-idx="${i}">
+          ${a.acknowledged ? 'Un-acknowledge' : 'Acknowledge this fault'}
+        </button>
       </div>`).join('') + `</div>`;
   } else if (hasFault) {
     html += `<div class="modal-detail">
       <div class="code">${escapeHtml(u.alert_code || 'Active alarm')}</div>
       <div class="msg">${escapeHtml(u.alert_message || 'No further detail available.')}</div>
+      <div class="alarm-when">${escapeHtml(formatAteneaTimestamp(u.atenea_timestamp))}</div>
     </div>`;
   } else {
     html += `<div class="modal-empty">No active fault on this unit.</div>`;
@@ -3324,7 +3335,7 @@ function renderModalBody() {
     html += `<button class="btn btn-unack" id="modalClearManualBtn">Clear ${u.tu_status ? 'out-of-service' : 'manual'} status</button>`;
     html += `<button class="btn" id="modalEditManualBtn">Edit</button>`;
   } else {
-    if (hasFault || u.acknowledged) {
+    if ((hasFault || u.acknowledged) && !allAlarms.length) {
       const willAck = !u.acknowledged;
       const ackLabel = willAck
         ? (activeAlarms.length > 1 ? `Acknowledge worst alarm (1 of ${activeAlarms.length})` : 'Acknowledge fault')
@@ -3344,6 +3355,12 @@ function renderModalBody() {
   document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
   const ackBtn = document.getElementById('modalAckBtn');
   if (ackBtn) ackBtn.addEventListener('click', () => handleAcknowledge(u));
+  body.querySelectorAll('.alarm-ack-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = allAlarms[+btn.dataset.alarmIdx];
+      if (a) handleAcknowledgeAlarm(u, a, btn);
+    });
+  });
   const setManualBtn = document.getElementById('modalSetManualBtn');
   if (setManualBtn) setManualBtn.addEventListener('click', () => { closeModal(); openManageModal(u.tu); });
   const editManualBtn = document.getElementById('modalEditManualBtn');
@@ -3367,6 +3384,41 @@ function renderModalBody() {
     await loadFleet();
     closeModal();
   });
+}
+
+async function handleAcknowledgeAlarm(u, alarm, btn) {
+  const errEl = document.getElementById('modalError');
+  if (errEl) errEl.hidden = true;
+  const newValue = !alarm.acknowledged;
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const result = await updateLiveAlarmAcknowledged(alarm.object_id, newValue);
+    if (!result.persisted) {
+      const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
+      localAckOverrides[u.tu + '|' + alarmKey] = newValue;
+    }
+    appendAckLogEntry({
+      tu: u.tu,
+      alarm_key: alarm.alarm_key || '',
+      alert_code: alarm.alert_code || '',
+      alert_message: alarm.alert_message || '',
+      atenea_timestamp: alarm.atenea_timestamp || '',
+      action: newValue ? 'Acknowledged' : 'Un-acknowledged',
+      at: new Date().toISOString(),
+      persisted: result.persisted
+    });
+    await loadFleet();
+    if (modalTu === u.tu) renderModalBody();
+  } catch (err) {
+    console.error('Failed to save acknowledgement:', err);
+    if (btn) { btn.disabled = false; btn.textContent = newValue ? 'Acknowledge this fault' : 'Un-acknowledge'; }
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.innerHTML =
+        `Couldn't save to Back4App: ${escapeHtml(err.message)}.<br>` +
+        `Make sure the JavaScript Key has <strong>update</strong> permission on <code>Live_Alarms</code>.`;
+    }
+  }
 }
 
 async function handleAcknowledge(u) {

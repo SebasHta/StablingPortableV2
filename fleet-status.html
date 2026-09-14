@@ -1478,7 +1478,18 @@ const TU_STATUS_FIELDS = {
   stop: ['STOP', 'stop'],
   reason: ['REASON', 'reason']
 };
-const LIVE_REFRESH_MS = 30000; // matches atenea_dashboard.html's own poll interval
+/* ── Back4App request budget ──────────────────────────────────────────────
+ * Every poll costs requests. At 30s that's 2 req x 120/hr = 5,760 req/day
+ * per open tab, 24/7. These three settings are the dials:
+ *   LIVE_REFRESH_MS     how often alarms are polled (the main cost)
+ *   TU_STATUS_REFRESH_MS  Out-of-Service list changes rarely — poll it far
+ *                       less often instead of on every alarm cycle
+ *   PAUSE_WHEN_HIDDEN   stop polling entirely while the tab isn't visible
+ * Raising LIVE_REFRESH_MS is the single biggest saving.
+ * ---------------------------------------------------------------------- */
+const LIVE_REFRESH_MS = 60000;        // 60s (was 30s) — halves alarm polling
+const TU_STATUS_REFRESH_MS = 600000;  // 10 min — STOP status rarely changes
+const PAUSE_WHEN_HIDDEN = true;       // no polling on a hidden/background tab
 
 const STATUS_LABEL = {
   healthy: 'Healthy',
@@ -1499,6 +1510,7 @@ const STATUS_DOT_CLASS = { failure: 'crit', review: 'warn', maintenance: 'maint'
 let liveRefreshTimer = null;
 let lastUnitsByTu = {};
 let lastLiveRecords = [];
+let tuStatusCache = null, tuStatusCacheAt = 0;
 let repeatMinCount = 3;
 let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', ts:'', ack:'' };
 let alarmSort = { col: null, dir: 'asc' };
@@ -2073,7 +2085,8 @@ function formatAteneaTimestamp(iso) {
 async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt', {
+  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,AteneaTimestamp,ateneaTimestamp';
+  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt&keys=' + encodeURIComponent(keys), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
   if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
@@ -2084,7 +2097,7 @@ async function fetchLiveAlarms() {
 async function fetchTuStatus() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const res = await fetch('https://parseapi.back4app.com/classes/TU_Status?limit=1000', {
+  const res = await fetch('https://parseapi.back4app.com/classes/TU_Status?limit=1000&keys=' + encodeURIComponent('TU,tu,STOP,stop,REASON,reason'), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
   if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
@@ -2195,11 +2208,18 @@ async function loadFleet() {
   // applied the same way regardless of which branch below ends up running
   // — lastTuStatusByTu is read by applyManualOverride() for every unit, in
   // both the full-live path and the applyLocalAckToRoster() fallback paths.
-  let tuStatusRecords = null;
-  try {
-    tuStatusRecords = await fetchTuStatus();
-  } catch (err) {
-    console.warn('Back4App TU_Status fetch failed, Out of Service status may be stale:', err);
+  // TU_Status is cached: re-fetched only every TU_STATUS_REFRESH_MS rather
+  // than on every alarm poll, since STOP status changes rarely.
+  let tuStatusRecords = tuStatusCache;
+  if (tuStatusCache === null || (Date.now() - tuStatusCacheAt) >= TU_STATUS_REFRESH_MS) {
+    try {
+      tuStatusRecords = await fetchTuStatus();
+      tuStatusCache = tuStatusRecords;
+      tuStatusCacheAt = Date.now();
+    } catch (err) {
+      console.warn('Back4App TU_Status fetch failed, Out of Service status may be stale:', err);
+      tuStatusRecords = tuStatusCache;
+    }
   }
   const tuStatusByTu = {};
   let tuStatusUnmatched = 0;
@@ -2379,7 +2399,21 @@ async function loadFleet() {
 
   render({ units: mergedUnits, _meta: { generated: new Date().toISOString() } });
 
-  if (!liveRefreshTimer) liveRefreshTimer = setInterval(loadFleet, LIVE_REFRESH_MS);
+  if (!liveRefreshTimer) startLiveRefresh();
+}
+
+function startLiveRefresh() {
+  if (liveRefreshTimer) return;
+  liveRefreshTimer = setInterval(() => {
+    if (PAUSE_WHEN_HIDDEN && document.hidden) return; // skip polls on a hidden tab
+    loadFleet();
+  }, LIVE_REFRESH_MS);
+}
+if (PAUSE_WHEN_HIDDEN) {
+  document.addEventListener('visibilitychange', () => {
+    // Coming back to the tab: refresh once immediately so the view isn't stale.
+    if (!document.hidden && liveRefreshTimer) loadFleet();
+  });
 }
 
 function applyLocalAckToRoster(roster) {

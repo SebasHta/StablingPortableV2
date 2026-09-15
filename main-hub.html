@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Depot Control — Stabling Diagram</title>
+<title>Depot Control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -413,7 +413,7 @@
   </nav>
   <div class="spacer"></div>
   <button class="btn" id="signOutBtn" title="Sign out" style="display:none;font-size:12px;padding:6px 11px">Lock</button>
-  <button class="btn icon" id="cfgBtn" title="Connection settings">⚙</button>
+  <button class="btn icon" id="cfgBtn" title="Connection settings" style="display:none">⚙</button>
 </header>
 
 <!-- HOME hub -->
@@ -423,7 +423,6 @@
       <div class="eyebrow">Railway fleet operations</div>
       <h1>Monitoring &amp; Maintenance</h1>
     </div>
-    <div class="kpis" id="homeKpis"></div>
     <h2 class="modules-title">Modules</h2>
     <div class="modules" id="modules"></div>
   </div>
@@ -664,7 +663,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "5.0";
+const APP_VERSION = "5.2";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -721,6 +720,10 @@ let activeYard = 0;
 /* ============================================================
    2) CONNECTION — hardcode here, or use the ⚙ drawer. No browser storage used.
    ============================================================ */
+/* Stabling is switched off: no TrainLocation polling, no Back4App queries,
+   and the tile/nav entry are hidden. Flip this to true to bring it back. */
+const STABLING_ENABLED = false;
+
 const CONFIG = {
   live:true,
   serverURL:"https://parseapi.back4app.com/",
@@ -854,7 +857,7 @@ function slotEl(train,berthLabel,extraClass){
 /* ---------- app shell / navigation ---------- */
 let currentView="home";
 const MODULES=[
-  {view:"stabling",live:true,name:"Stabling",perm:"Stabling",desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
+  {view:"stabling",live:true,name:"Stabling",perm:"Stabling",disabled:!STABLING_ENABLED,desc:"Live berth allocation across depots & yards.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 8h18M3 14h18"/><path d="M7 8v6M12 8v6M17 8v6"/></svg>'},
   {view:"apc",live:true,name:"APC",perm:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
   {view:"errorlog",live:true,name:"APC Error Log",perm:"APC_Er",desc:"Every inspection issue across the fleet.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>'},
   {view:"fleetstatus",live:true,name:"Fleet Status",desc:"Fleet annunciator status panel.",perm:"Fleet_Status",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>'},
@@ -863,10 +866,12 @@ const MODULES=[
   {view:null,live:false,name:"Audits",perm:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
   {view:"reports",live:true,name:"Reports",perm:"Reports",desc:"Fleet analytics & inspection reports.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 20V11M10 20V5M15 20v-7M20 20v-10"/></svg>'},
 ];
+function m_disabled(m){ return !!(m && m.disabled); }
 function userCan(m){ const u=(typeof Parse!=='undefined')?Parse.User.current():null; if(!u) return false; if(u.get('Admin')===true) return true; return (m && m.perm) ? (u.get(m.perm)===true) : true; }
 function renderModules(){
   const el=$("modules"); if(!el) return; el.innerHTML="";
   MODULES.forEach(m=>{
+    if(m.disabled) return;
     const allowed=userCan(m), active=m.live && allowed;
     const b=document.createElement("button");
     b.className="tile"+(active?"":" locked");
@@ -877,18 +882,10 @@ function renderModules(){
     if(active && m.view) b.onclick=()=>showView(m.view);
     el.appendChild(b);
   });
-  MODULES.forEach(m=>{ if(m.view){ const nb=document.querySelector('#mainnav [data-view="'+m.view+'"]'); if(nb) nb.style.display = userCan(m) ? '' : 'none'; } });
-}
-function renderHomeKPIs(){
-  const el=$("homeKpis"); if(!el) return;
-  const rows=state.rows||[];
-  const faults=rows.filter(r=>normStatus(r.status)==="fault").length;
-  const depart=rows.filter(r=>normStatus(r.status)==="departing").length;
-  const kpi=(v,k,warn)=>'<div class="kpi'+(warn?' warn':'')+'"><div class="v">'+v+'</div><div class="k">'+k+'</div></div>';
-  el.innerHTML=kpi(rows.length,"units tracked")+kpi(YARDS.length,"yards")+kpi(faults,"faults / holds",faults>0)+kpi(depart,"due to depart");
+  MODULES.forEach(m=>{ if(m.view){ const nb=document.querySelector('#mainnav [data-view="'+m.view+'"]'); if(nb) nb.style.display = (!m.disabled && userCan(m)) ? '' : 'none'; } });
 }
 function showView(name){
-  const _mod=MODULES.find(m=>m.view===name); if(_mod && !userCan(_mod)) name="home";
+  const _mod=MODULES.find(m=>m.view===name); if(_mod && (m_disabled(_mod) || !userCan(_mod))) name="home";
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   const el = $(name+"View") || $("homeView");
   if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./train_inspection.html"); }
@@ -896,7 +893,6 @@ function showView(name){
   if(el) el.style.display="";
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
-  if(name==="home") renderHomeKPIs();
   if(name==="reports") openReports();
   if(name==="errorlog") openErrorLog();
   if(name==="stoplist") openStopList();
@@ -1699,7 +1695,6 @@ function render(){
   pill.className="status-pill "+(state.mode==="live"?"live":state.mode==="error"?"err":"demo");
   txt.textContent=state.mode==="live"?"Live · Back4App":state.mode==="error"?"Connection error":"Sample data";
   $("depotSub").textContent=state.mode==="live"?CONFIG.className:CONFIG.depotName;
-  if($("homeKpis")) renderHomeKPIs();
   checkAlarms();
 }
 
@@ -1874,6 +1869,7 @@ async function commit(clear){
 /* ---------- loaders ---------- */
 function loadDemo(){ state.rows=sampleData(); state.mode="demo"; state.error=""; state.lastUpdated=new Date(); render(); }
 async function loadLive(){
+  if(!STABLING_ENABLED) return;
   if(typeof Parse==="undefined"){ state.mode="error"; render(); setMsg("bad","Parse SDK failed to load (offline or blocked)."); return; }
   try{
     if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; }
@@ -1888,16 +1884,19 @@ async function loadLive(){
     setMsg("bad","Couldn’t reach Back4App: "+(err.message||err)+"\n\nCheck App ID, JavaScript Key, class name and read permissions.");
   }
 }
-function refresh(){ CONFIG.live?loadLive():loadDemo(); }
+function refresh(){ if(!STABLING_ENABLED) return; CONFIG.live?loadLive():loadDemo(); }
 function restartPolling(){
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  if(!STABLING_ENABLED) return; // no TrainLocation polling while Stabling is off
   const s=Number(CONFIG.pollSeconds)||0;
   if(CONFIG.live && s>0) pollTimer=setInterval(loadLive,s*1000);
 }
 
 /* ---------- drawer ---------- */
 function setMsg(k,t){ $("cfgMsg").innerHTML='<div class="msg '+k+'">'+escapeHtml(t)+'</div>'; }
-function openCfg(){ syncForm(); $("scrim").classList.add("open"); $("drawer").classList.add("open"); }
+function isAdminUser(){ try{ const u=(typeof Parse!=='undefined')?Parse.User.current():null; return !!u && u.get('Admin')===true; }catch(e){ return false; } }
+function updateCfgBtn(){ const b=$("cfgBtn"); if(b) b.style.display = isAdminUser() ? '' : 'none'; }
+function openCfg(){ if(!isAdminUser()) return; syncForm(); $("scrim").classList.add("open"); $("drawer").classList.add("open"); }
 function closeCfg(){ $("scrim").classList.remove("open"); $("drawer").classList.remove("open"); }
 function syncForm(){
   $("liveToggle").checked=CONFIG.live; $("cServer").value=CONFIG.serverURL;
@@ -1928,9 +1927,9 @@ function isParseLogin(){ return AUTH.mode==="parse" && CONFIG.live && CONFIG.app
 function ensureParse(){ if(!parseReady){ Parse.initialize(CONFIG.appId,CONFIG.jsKey); Parse.serverURL=CONFIG.serverURL; parseReady=true; } }
 function loginMsg(k,t){ $("loginMsg").innerHTML=t?'<div class="msg '+k+'">'+escapeHtml(t)+'</div>':""; }
 function showLogin(){ $("login").style.display="flex"; setTimeout(()=>$("loginUser").focus(),60); }
-function startData(){ if(CONFIG.live && CONFIG.appId && CONFIG.jsKey){ loadLive().then(restartPolling); } else { loadDemo(); } }
+function startData(){ if(!STABLING_ENABLED) return; if(CONFIG.live && CONFIG.appId && CONFIG.jsKey){ loadLive().then(restartPolling); } else { loadDemo(); } }
 function unlock(){ authed=true; $("login").style.display="none"; $("topbar").style.display=""; $("signOutBtn").style.display="";
-  renderModules(); startData(); showView("home"); }
+  renderModules(); updateCfgBtn(); startData(); showView("home"); }
 
 async function doLogin(){
   const u=$("loginUser").value.trim(), p=$("loginPass").value;

@@ -1,6 +1,89 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>window.__B4A_SOURCE__="Main hub";</script>
+<script>
+/* ── Back4App traffic meter ────────────────────────────────────────────────
+ * Counts every request this browser makes to Back4App, from every page of the
+ * app (main hub, the Fleet Status panel, the inspection console). Totals are
+ * kept per day in localStorage so they survive reloads and are shared across
+ * tabs on this origin, and shown on the Admin page.
+ * Counting is local to THIS browser/device — it does not itself cost requests.
+ * Console: b4aTraffic() for the raw store.
+ * ---------------------------------------------------------------------- */
+(function () {
+  var SRC = window.__B4A_SOURCE__ || 'app';
+  var KEY = 'b4a_traffic_v1';
+  var pending = null, flushTimer = null;
+
+  function dayKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } }
+  function save(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+
+  // Batched so the meter itself doesn't hammer localStorage on every request.
+  function flush() {
+    flushTimer = null;
+    if (!pending) return;
+    var p = pending; pending = null;
+    var store = load(), k = dayKey();
+    var d = store[k] || (store[k] = { total: 0, byMethod: {}, bySource: {}, byClass: {} });
+    d.total += p.n;
+    Object.keys(p.m).forEach(function (x) { d.byMethod[x] = (d.byMethod[x] || 0) + p.m[x]; });
+    Object.keys(p.c).forEach(function (x) { d.byClass[x] = (d.byClass[x] || 0) + p.c[x]; });
+    d.bySource[SRC] = (d.bySource[SRC] || 0) + p.n;
+    var days = Object.keys(store).sort();
+    while (days.length > 7) { delete store[days.shift()]; }   // keep a week
+    save(store);
+  }
+  function bump(method, cls) {
+    var st = pending || (pending = { m: {}, c: {}, n: 0 });
+    st.n++;
+    st.m[method] = (st.m[method] || 0) + 1;
+    st.c[cls] = (st.c[cls] || 0) + 1;
+    if (!flushTimer) flushTimer = setTimeout(flush, 3000);
+  }
+
+  function isB4A(url) { return /parseapi\.back4app\.com/.test(String(url)); }
+  function classify(url) {
+    try {
+      var m = String(url).match(/\/(classes|users|functions|batch|login|logout|sessions)\/?([^/?#]*)/);
+      if (!m) return 'other';
+      if (m[1] === 'classes') return m[2] || 'classes';
+      if (m[1] === 'functions') return 'cloud:' + (m[2] || '');
+      return m[1];
+    } catch (e) { return 'other'; }
+  }
+
+  var _fetch = window.fetch;
+  if (_fetch) {
+    window.fetch = function (input, init) {
+      try {
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        if (isB4A(url)) bump(String((init && init.method) || (input && input.method) || 'GET').toUpperCase(), classify(url));
+      } catch (e) {}
+      return _fetch.apply(this, arguments);
+    };
+  }
+  // The Parse JS SDK uses XMLHttpRequest, not fetch — patch both or half the
+  // traffic is invisible.
+  var XO = window.XMLHttpRequest && window.XMLHttpRequest.prototype.open;
+  if (XO) {
+    window.XMLHttpRequest.prototype.open = function (method, url) {
+      try { if (isB4A(url)) bump(String(method || 'GET').toUpperCase(), classify(url)); } catch (e) {}
+      return XO.apply(this, arguments);
+    };
+  }
+
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
+  window.b4aTraffic = function () { flush(); return load(); };
+  window.b4aTrafficReset = function () { try { localStorage.removeItem(KEY); } catch (e) {} return true; };
+})();
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Depot Control</title>
@@ -351,6 +434,18 @@
   .stop-form select:focus,.stop-form input:not([type="checkbox"]):focus{border-color:var(--rail-lit)}
   .stop-actions{display:flex;gap:10px;flex-wrap:wrap}
   .tile.locked{filter:grayscale(.55)}
+  .b4a-card{background:linear-gradient(180deg,var(--panel),#10171e);border:1px solid var(--line);border-radius:12px;padding:16px 18px;max-width:900px}
+  .b4a-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .b4a-head h4{margin:0;font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:13px;color:var(--ink-faint)}
+  .b4a-nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+  .b4a-num{background:#0c131a;border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .b4a-num .v{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--ink)}
+  .b4a-num .k{font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .b4a-num.warn .v{color:var(--amber)} .b4a-num.bad .v{color:var(--red)}
+  .b4a-split{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+  .b4a-split h5{margin:0 0 6px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--ink-faint)}
+  .b4a-bar{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+  .b4a-note{font-size:11px;color:var(--ink-faint);margin-top:12px;line-height:1.5}
   .perm-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px 18px;max-width:900px}
   .perm-item{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);cursor:pointer}
   .perm-item input{width:16px;height:16px;min-width:0;flex:0 0 auto;margin:0}
@@ -558,6 +653,7 @@
       <div class="stop-actions"><button class="btn primary" id="adminCreate">Create user</button></div>
     </div>
     <div id="adminStatus" style="margin:12px 0"></div>
+    <div id="b4aTrafficPanel" style="margin:18px 0"></div>
     <div id="adminContent"></div>
   </div>
 </section>
@@ -663,7 +759,7 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "5.2";
+const APP_VERSION = "5.3";
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -896,7 +992,7 @@ function showView(name){
   if(name==="reports") openReports();
   if(name==="errorlog") openErrorLog();
   if(name==="stoplist") openStopList();
-  if(name==="admin") openAdmin();
+  if(name==="admin") openAdmin(); else b4aStopPanel();
 }
 
 /* ---------- alarms / audio ---------- */
@@ -1162,6 +1258,46 @@ async function loadStopList(){
 /* ---------- Admin: user management ---------- */
 const PERMS=[["Stabling","Stabling"],["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Admin","Admin"]];
 let adminLoaded=false, adminUsers=[];
+/* ---------- Back4App traffic meter (Admin page) ---------- */
+let b4aPanelTimer=null;
+function b4aTodayKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function b4aRenderTraffic(){
+  const el=$("b4aTrafficPanel"); if(!el) return;
+  const store=(typeof b4aTraffic==='function')?b4aTraffic():{};
+  const today=store[b4aTodayKey()]||{total:0,byMethod:{},bySource:{},byClass:{}};
+  const now=new Date();
+  const elapsedH=Math.max((now-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/3600000, 0.02);
+  const projected=Math.round(today.total/elapsedH*24);
+  const days=Object.keys(store).sort().slice(-7);
+  const week=days.reduce((a,k)=>a+(store[k].total||0),0);
+  const writes=(today.byMethod.PUT||0)+(today.byMethod.POST||0)+(today.byMethod.DELETE||0);
+  const cls=v=>v>40000?' bad':v>15000?' warn':'';
+  const list=(obj,max)=>{ const es=Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]).slice(0,max||6);
+    return es.length?es.map(([k,v])=>'<div class="b4a-bar"><span>'+escapeHtml(k)+'</span><span>'+v.toLocaleString()+'</span></div>').join(''):'<div class="b4a-bar"><span>none yet</span><span>0</span></div>'; };
+  el.innerHTML='<div class="b4a-card">'+
+    '<div class="b4a-head"><h4>Back4App traffic \u00b7 this browser</h4><div class="spacer" style="flex:1"></div>'+
+      '<button class="btn tiny" id="b4aRefresh">Refresh</button><button class="btn tiny danger" id="b4aReset">Reset</button></div>'+
+    '<div class="b4a-nums">'+
+      '<div class="b4a-num'+cls(today.total)+'"><div class="v">'+today.total.toLocaleString()+'</div><div class="k">requests today</div></div>'+
+      '<div class="b4a-num'+cls(projected)+'"><div class="v">'+projected.toLocaleString()+'</div><div class="k">projected / day</div></div>'+
+      '<div class="b4a-num"><div class="v">'+Math.round(today.total/elapsedH).toLocaleString()+'</div><div class="k">per hour</div></div>'+
+      '<div class="b4a-num'+(writes>2000?' warn':'')+'"><div class="v">'+writes.toLocaleString()+'</div><div class="k">writes today</div></div>'+
+      '<div class="b4a-num"><div class="v">'+week.toLocaleString()+'</div><div class="k">last 7 days</div></div>'+
+    '</div>'+
+    '<div class="b4a-split">'+
+      '<div><h5>By page</h5>'+list(today.bySource)+'</div>'+
+      '<div><h5>By class / endpoint</h5>'+list(today.byClass,8)+'</div>'+
+      '<div><h5>By method</h5>'+list(today.byMethod)+'</div>'+
+    '</div>'+
+    '<div class="b4a-note">Counts every Back4App request from this browser (all app pages, all tabs). '+
+      'Other devices and screens are counted separately \u2014 add them up for total account usage. '+
+      'A high <b>writes</b> figure usually means acknowledge writes are being retried.</div>'+
+  '</div>';
+  $("b4aRefresh").onclick=b4aRenderTraffic;
+  $("b4aReset").onclick=()=>{ if(confirm('Reset the locally recorded request counts?')){ if(typeof b4aTrafficReset==='function') b4aTrafficReset(); b4aRenderTraffic(); } };
+}
+function b4aStartPanel(){ b4aRenderTraffic(); if(b4aPanelTimer) clearInterval(b4aPanelTimer); b4aPanelTimer=setInterval(()=>{ if(currentView==='admin') b4aRenderTraffic(); }, 5000); }
+function b4aStopPanel(){ if(b4aPanelTimer){ clearInterval(b4aPanelTimer); b4aPanelTimer=null; } }
 function openAdmin(){
   const cur=(typeof Parse!=='undefined')?Parse.User.current():null;
   if(!cur || cur.get("Admin")!==true){
@@ -1171,6 +1307,7 @@ function openAdmin(){
     return;
   }
   if($("adminCreate")) $("adminCreate").disabled=false;
+  b4aStartPanel();
   const pc=$("adminCreatePerms");
   if(pc && !pc.innerHTML){ pc.innerHTML=PERMS.map(pr=>'<label class="perm-item"><input type="checkbox" data-newperm="'+pr[0]+'"> '+escapeHtml(pr[1])+'</label>').join(''); }
   if(!adminLoaded) loadUsers();

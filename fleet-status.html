@@ -1,6 +1,89 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>window.__B4A_SOURCE__="Fleet Status";</script>
+<script>
+/* ── Back4App traffic meter ────────────────────────────────────────────────
+ * Counts every request this browser makes to Back4App, from every page of the
+ * app (main hub, the Fleet Status panel, the inspection console). Totals are
+ * kept per day in localStorage so they survive reloads and are shared across
+ * tabs on this origin, and shown on the Admin page.
+ * Counting is local to THIS browser/device — it does not itself cost requests.
+ * Console: b4aTraffic() for the raw store.
+ * ---------------------------------------------------------------------- */
+(function () {
+  var SRC = window.__B4A_SOURCE__ || 'app';
+  var KEY = 'b4a_traffic_v1';
+  var pending = null, flushTimer = null;
+
+  function dayKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function load() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { return {}; } }
+  function save(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+
+  // Batched so the meter itself doesn't hammer localStorage on every request.
+  function flush() {
+    flushTimer = null;
+    if (!pending) return;
+    var p = pending; pending = null;
+    var store = load(), k = dayKey();
+    var d = store[k] || (store[k] = { total: 0, byMethod: {}, bySource: {}, byClass: {} });
+    d.total += p.n;
+    Object.keys(p.m).forEach(function (x) { d.byMethod[x] = (d.byMethod[x] || 0) + p.m[x]; });
+    Object.keys(p.c).forEach(function (x) { d.byClass[x] = (d.byClass[x] || 0) + p.c[x]; });
+    d.bySource[SRC] = (d.bySource[SRC] || 0) + p.n;
+    var days = Object.keys(store).sort();
+    while (days.length > 7) { delete store[days.shift()]; }   // keep a week
+    save(store);
+  }
+  function bump(method, cls) {
+    var st = pending || (pending = { m: {}, c: {}, n: 0 });
+    st.n++;
+    st.m[method] = (st.m[method] || 0) + 1;
+    st.c[cls] = (st.c[cls] || 0) + 1;
+    if (!flushTimer) flushTimer = setTimeout(flush, 3000);
+  }
+
+  function isB4A(url) { return /parseapi\.back4app\.com/.test(String(url)); }
+  function classify(url) {
+    try {
+      var m = String(url).match(/\/(classes|users|functions|batch|login|logout|sessions)\/?([^/?#]*)/);
+      if (!m) return 'other';
+      if (m[1] === 'classes') return m[2] || 'classes';
+      if (m[1] === 'functions') return 'cloud:' + (m[2] || '');
+      return m[1];
+    } catch (e) { return 'other'; }
+  }
+
+  var _fetch = window.fetch;
+  if (_fetch) {
+    window.fetch = function (input, init) {
+      try {
+        var url = (typeof input === 'string') ? input : (input && input.url) || '';
+        if (isB4A(url)) bump(String((init && init.method) || (input && input.method) || 'GET').toUpperCase(), classify(url));
+      } catch (e) {}
+      return _fetch.apply(this, arguments);
+    };
+  }
+  // The Parse JS SDK uses XMLHttpRequest, not fetch — patch both or half the
+  // traffic is invisible.
+  var XO = window.XMLHttpRequest && window.XMLHttpRequest.prototype.open;
+  if (XO) {
+    window.XMLHttpRequest.prototype.open = function (method, url) {
+      try { if (isB4A(url)) bump(String(method || 'GET').toUpperCase(), classify(url)); } catch (e) {}
+      return XO.apply(this, arguments);
+    };
+  }
+
+  window.addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', function () { if (document.hidden) flush(); });
+  window.b4aTraffic = function () { flush(); return load(); };
+  window.b4aTrafficReset = function () { try { localStorage.removeItem(KEY); } catch (e) {} return true; };
+})();
+</script>
+
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AOR Fleet Status Panel</title>

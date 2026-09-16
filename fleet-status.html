@@ -1520,6 +1520,29 @@ let alarmSort = { col: null, dir: 'asc' };
 let alarmListBase = [];
 let alarmListVisible = [];
 const autoAckedThisSession = new Set();
+const autoAckAttempts = new Map();      // objectId -> failed attempts
+let autoAckGaveUpWarned = false;
+/* Writes are the hidden cost: one PUT per alarm, per cycle, forever if they
+   keep failing. Cap how many can fire per cycle and stop retrying a record
+   that has failed repeatedly (a denied CLP would otherwise retry every
+   record on every poll, for ever). */
+const MAX_AUTO_ACK_PER_CYCLE = 20;
+const MAX_AUTO_ACK_ATTEMPTS = 2;
+/* Rolling count of Back4App requests, so consumption can be seen rather than
+   guessed. Read it in the console with: b4aRequestStats() */
+const b4aReq = { get: 0, put: 0, post: 0, cycles: 0, since: Date.now() };
+function countReq(kind) { b4aReq[kind] = (b4aReq[kind] || 0) + 1; }
+window.b4aRequestStats = function () {
+  const mins = (Date.now() - b4aReq.since) / 60000;
+  const total = b4aReq.get + b4aReq.put + b4aReq.post;
+  return {
+    GET: b4aReq.get, PUT: b4aReq.put, POST: b4aReq.post, total,
+    pollCycles: b4aReq.cycles,
+    minutesOpen: +mins.toFixed(1),
+    perHour: +(total / (mins / 60 || 1)).toFixed(1),
+    projectedPerDay: Math.round(total / (mins / 60 || 1) * 24)
+  };
+};
 
 // Most recently fetched TU_Status records, keyed by TU: { stop, reason,
 // object_id }. Populated by loadFleet() on every refresh; read by
@@ -2089,6 +2112,7 @@ async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
   const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,AteneaTimestamp,ateneaTimestamp';
+  countReq('get');
   const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt&keys=' + encodeURIComponent(keys), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
@@ -2100,6 +2124,7 @@ async function fetchLiveAlarms() {
 async function fetchTuStatus() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
+  countReq('get');
   const res = await fetch('https://parseapi.back4app.com/classes/TU_Status?limit=1000&keys=' + encodeURIComponent('TU,tu,STOP,stop,REASON,reason'), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
@@ -2125,6 +2150,7 @@ async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
     'X-Parse-JavaScript-Key': jsKey,
     'Content-Type': 'application/json'
   };
+  countReq('put');
   const res = await fetch(`https://parseapi.back4app.com/classes/Live_Alarms/${objectId}`, {
     method: 'PUT',
     headers,
@@ -2285,10 +2311,25 @@ async function loadFleet() {
   });
 
   // Persist each auto-acknowledgement once per record.
+  b4aReq.cycles++;
+  let issued = 0;
   pendingAutoAck.forEach(oid => {
     if (autoAckedThisSession.has(oid)) return;
+    if ((autoAckAttempts.get(oid) || 0) >= MAX_AUTO_ACK_ATTEMPTS) return; // stop retrying a record that keeps failing
+    if (issued >= MAX_AUTO_ACK_PER_CYCLE) return;                        // spread the rest over later cycles
+    issued++;
     autoAckedThisSession.add(oid);
-    Promise.resolve(updateLiveAlarmAcknowledged(oid, true)).catch(() => autoAckedThisSession.delete(oid));
+    Promise.resolve(updateLiveAlarmAcknowledged(oid, true)).catch(() => {
+      autoAckedThisSession.delete(oid);
+      const n = (autoAckAttempts.get(oid) || 0) + 1;
+      autoAckAttempts.set(oid, n);
+      if (n >= MAX_AUTO_ACK_ATTEMPTS && !autoAckGaveUpWarned) {
+        autoAckGaveUpWarned = true;
+        console.warn('Auto-acknowledge writes to Live_Alarms are failing and have been stopped. ' +
+          'Check that the JavaScript Key has update permission on Live_Alarms — until then each failed ' +
+          'write was being retried on every poll, which burns requests.');
+      }
+    });
   });
 
   if (liveRecords.length && unmatched === liveRecords.length) {

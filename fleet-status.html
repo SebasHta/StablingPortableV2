@@ -365,9 +365,17 @@
   .modal-detail.is-ack{ opacity:.68; }
   .alarm-ack-btn{ margin-top:10px; width:100%; }
   .tt-alarm-ts{ opacity:.75; font-size:11px; color:var(--ink-muted); }
+  #repeatWrap table.alarm-table{ min-width:760px; }
+  #repeatWrap .al-ts{ white-space:nowrap !important; }
+  #repeatWrap td, #repeatWrap th{ white-space:nowrap; }
+  tr.repeat-pending td{ background:rgba(168,85,247,.10); }
+  tr.repeat-done{ opacity:.6; }
+  .repeat-tu{ cursor:pointer; text-decoration:underline dotted; }
+  .repeat-badge-ok{ color:#c4b5fd; font-size:12px; }
+  .repeat-sub{ font-size:11px; color:var(--ink-muted); margin-top:2px; }
   .repeat-badge{ display:inline-block; min-width:18px; text-align:center; padding:1px 6px; border-radius:999px; background:rgba(230,80,70,.9); color:#fff; font-size:11px; font-weight:700; margin-left:4px; }
   .repeat-scrim{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; }
-  .repeat-drawer{ position:fixed; top:0; right:0; height:100vh; width:min(600px,94vw); background:var(--panel); border-left:1px solid var(--panel-border); box-shadow:-10px 0 30px rgba(0,0,0,.45); z-index:61; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; }
+  .repeat-drawer{ position:fixed; top:0; right:0; height:100vh; width:min(1000px,96vw); background:var(--panel); border-left:1px solid var(--panel-border); box-shadow:-10px 0 30px rgba(0,0,0,.45); z-index:61; transform:translateX(100%); transition:transform .25s ease; display:flex; flex-direction:column; }
   .repeat-drawer.open{ transform:translateX(0); }
   .repeat-drawer-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--panel-border); flex:0 0 auto; }
   .repeat-drawer-head h2{ margin:0; font-size:17px; }
@@ -606,6 +614,35 @@
       inset 0 2px 5px rgba(0,0,0,.35);
   }
 
+  /* Repeat fault awaiting escalation. No coloured frame: the tile's own
+     severity colour stays the only colour that means "how bad". Repetition is
+     shown as a count chip in the free corner, matching the ✓ / ⚑ badges, plus
+     a faint inset ring so it still reads at a glance from across the room. */
+  .tile.repeat-fault{
+    box-shadow:
+      0 3px 6px rgba(0,0,0,.35),
+      inset 0 1px 0 rgba(255,255,255,.28),
+      inset 0 -3px 6px rgba(0,0,0,.22),
+      inset 0 0 0 2px rgba(255,255,255,.55);
+  }
+  .repeat-chip{
+    position:absolute;
+    bottom:5px;
+    right:5px;
+    min-width:16px;
+    height:16px;
+    padding:0 5px;
+    border-radius:8px;
+    background:rgba(0,0,0,.42);
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:10px;
+    font-weight:700;
+    line-height:1;
+    letter-spacing:.2px;
+  }
   .tile.healthy{
     background:linear-gradient(155deg, var(--good-light) 0%, var(--good) 55%, var(--good-dark) 100%);
     color:var(--good-ink);
@@ -1597,6 +1634,18 @@ let liveRefreshTimer = null;
 let lastUnitsByTu = {};
 let lastLiveRecords = [];
 let tuStatusCache = null, tuStatusCacheAt = 0;
+/* Repeat-fault escalation. The second acknowledgement belongs to the PATTERN
+   (unit + fault code), not to any one alarm record, so it lives in its own
+   class — one row per TU+code, one write per escalation. A row re-arms once
+   the fault has occurred REPEAT_REARM_AFTER more times than when it was
+   escalated. */
+const REPEAT_ACK_CLASS = 'RepeatFaultAck';
+const REPEAT_REARM_AFTER = 10;
+const REPEAT_ACK_REFRESH_MS = 300000; // 5 min
+let repeatAckCache = {}, repeatAckCacheAt = 0;
+try { const p = window.parent; if (p && p !== window && p.Parse && p.Parse.User.current()) window.__B4A_USER__ = p.Parse.User.current().getUsername(); } catch (e) {}
+let repeatEscalatedTus = new Set();   // escalated + still quiet
+let repeatPendingTus = new Map();     // tu -> highest occurrence count awaiting escalation
 let repeatMinCount = 3;
 let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', ts:'', ack:'' };
 let alarmSort = { col: null, dir: 'asc' };
@@ -2148,7 +2197,11 @@ function isFlagOff(rec) {
 // that ON acknowledged.
 function alarmMatchKey(rec, tu) {
   const id = pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '';
-  return String(tu).trim().toLowerCase() + '|' + String(id).trim().toLowerCase();
+  // Location is part of the identity: the same alarm code on the same unit can
+  // be raised at different locations, and an OFF must only clear the ON it
+  // actually belongs to.
+  const loc = pickField(rec, LIVE_ALARMS_FIELDS.location) || '';
+  return String(tu).trim().toLowerCase() + '|' + String(id).trim().toLowerCase() + '|' + String(loc).trim().toLowerCase();
 }
 
 // Tolerant boolean read for the `acknowledged` field on a Live_Alarms
@@ -2224,6 +2277,61 @@ async function fetchTuStatus() {
  * out from under it, so that field sticks on that record until something
  * explicitly changes it again.
  */
+function b4aHeaders() {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  return {
+    'X-Parse-Application-Id': appId,
+    'X-Parse-JavaScript-Key': jsKey,
+    'Content-Type': 'application/json'
+  };
+}
+function repeatKey(tu, code) { return String(tu).trim().toUpperCase() + '||' + String(code).trim().toLowerCase(); }
+
+async function fetchRepeatAcks(force) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return repeatAckCache;
+  if (!force && repeatAckCacheAt && (Date.now() - repeatAckCacheAt) < REPEAT_ACK_REFRESH_MS) return repeatAckCache;
+  countReq('get');
+  const res = await fetch('https://parseapi.back4app.com/classes/' + REPEAT_ACK_CLASS + '?limit=1000', { headers: b4aHeaders() });
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status + ' (' + REPEAT_ACK_CLASS + ')');
+  const data = await res.json();
+  const map = {};
+  (data.results || []).forEach(r => { map[repeatKey(r.tu, r.code)] = r; });
+  repeatAckCache = map; repeatAckCacheAt = Date.now();
+  return map;
+}
+
+// Upsert: a fault escalated before is updated with the new count, not duplicated.
+async function saveRepeatAck(tu, code, count, note) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) throw new Error('Back4App keys are not configured.');
+  const existing = repeatAckCache[repeatKey(tu, code)];
+  const body = {
+    tu: String(tu), code: String(code),
+    status: 'Escalated',
+    countAtAck: Number(count) || 0,
+    ackedAt: new Date().toISOString(),
+    ackedBy: (window.__B4A_USER__ || 'operator')
+  };
+  if (note) body.note = String(note);
+  let res;
+  if (existing && existing.objectId) {
+    countReq('put');
+    res = await fetch('https://parseapi.back4app.com/classes/' + REPEAT_ACK_CLASS + '/' + existing.objectId,
+      { method: 'PUT', headers: b4aHeaders(), body: JSON.stringify(body) });
+  } else {
+    countReq('post');
+    res = await fetch('https://parseapi.back4app.com/classes/' + REPEAT_ACK_CLASS,
+      { method: 'POST', headers: b4aHeaders(), body: JSON.stringify(body) });
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error('Back4App HTTP ' + res.status + (t ? ' — ' + t : ''));
+  }
+  await fetchRepeatAcks(true);
+  return true;
+}
+
 async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey || !objectId) return { persisted: false }; // demo/local-only mode, or no live record to write to
@@ -2315,6 +2423,7 @@ async function loadFleet() {
     console.warn('Back4App fetch failed, falling back to roster data:', err);
   }
   lastLiveRecords = liveRecords || [];
+  try { await fetchRepeatAcks(false); } catch (err) { console.warn('RepeatFaultAck fetch failed:', err); }
 
   // TU_Status (Out of Service) is fetched independently of Live_Alarms and
   // applied the same way regardless of which branch below ends up running
@@ -2652,14 +2761,15 @@ function render(json) {
     const alarmsJson = escapeAttr(JSON.stringify((u.alarms || []).map(a => ({
       status: a.status, code: a.alert_code || '', msg: a.alert_message || '', ack: !!a.acknowledged, ts: a.atenea_timestamp || ''
     }))));
-    return `<div class="tile ${escapeAttr(u.status)}" role="listitem" tabindex="0"
+    const repeatN = repeatPendingTus.get(String(u.tu).trim()) || 0;
+    return `<div class="tile ${escapeAttr(u.status)}${repeatN ? ' repeat-fault' : ''}" role="listitem" tabindex="0"
       data-tu="${escapeAttr(u.tu)}" data-status="${escapeAttr(u.status)}"
       data-code="${escapeAttr(u.alert_code || '')}" data-msg="${escapeAttr(u.alert_message || '')}"
       data-ack="${u.acknowledged ? '1' : '0'}" data-manual="${u.manual ? '1' : '0'}"
       data-ts="${escapeAttr(u.atenea_timestamp || '')}"
       data-alarms="${alarmsJson}"
       aria-label="${escapeAttr(u.tu)} — ${escapeAttr(label)}${ackSuffix}${manualSuffix}${u.alert_message ? ': ' + escapeAttr(u.alert_message) : ''}. Press Enter for details.">
-      ${escapeHtml(u.tu)}${u.acknowledged ? '<span class="ack-badge" title="Acknowledged">✓</span>' : ''}${u.manual ? '<span class="manual-badge" title="Manually set">⚑</span>' : ''}
+      ${escapeHtml(u.tu)}${u.acknowledged ? '<span class="ack-badge" title="Acknowledged">✓</span>' : ''}${u.manual ? '<span class="manual-badge" title="Manually set">⚑</span>' : ''}${repeatN ? `<span class="repeat-chip" title="${repeatN} occurrences of the same fault — not yet escalated">\u21bb${repeatN}</span>` : ''}
     </div>`;
   }).join('');
 
@@ -2691,6 +2801,7 @@ function render(json) {
 
   // Kept in sync with the tile grid on every render, regardless of which
   // tab is currently visible — see "TABS (Tiles / List)" below.
+  classifyRepeatRows();
   renderAlarmList(units);
   renderRepeatFaults();
 }
@@ -2813,10 +2924,58 @@ function alarmRowHtml(r){
         </tr>`;
 }
 function wireAlarmRows(wrap){
-  wrap.querySelectorAll('tbody tr[data-tu]').forEach(tr => {
-    tr.addEventListener('click', () => openUnitModal(tr.dataset.tu));
-    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(tr.dataset.tu); } });
+  wrap.querySelectorAll('.repeat-tu').forEach(el => {
+    el.addEventListener('click', () => openUnitModal(el.dataset.tu));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(el.dataset.tu); } });
   });
+  wrap.querySelectorAll('.repeat-esc-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const e = rows[+btn.dataset.idx];
+      if (!e) return;
+      if (!confirm(`Escalate ${e.tu} — ${e.code}?\n\n${e.count} occurrences. It will re-appear here after ${REPEAT_REARM_AFTER} more.`)) return;
+      const note = prompt('Note (optional) — e.g. work order or parts reference:', (e.ack && e.ack.note) || '') || '';
+      btn.disabled = true; btn.textContent = 'Saving…';
+      // The save and the redraw are reported separately: a redraw bug must
+      // never be blamed on Back4App permissions.
+      try {
+        await saveRepeatAck(e.tu, e.code, e.count, note);
+      } catch (err) {
+        btn.disabled = false; btn.textContent = e.ack ? 'Re-escalate' : 'Escalate';
+        alert('Could not save the escalation: ' + ((err && err.message) || err) +
+              '\n\nCheck that the ' + REPEAT_ACK_CLASS + ' class allows create and update.');
+        return;
+      }
+      try {
+        classifyRepeatRows();
+        renderRepeatFaults();
+        render({ units: Object.values(lastUnitsByTu), _meta: { generated: new Date().toISOString() } });
+      } catch (err) {
+        console.error('Escalation saved, but redrawing failed:', err);
+      }
+    });
+  });
+  const rex = document.getElementById('repeatExportBtn');
+  if (rex) rex.addEventListener('click', () => downloadRepeatCsv(rows));
+}
+
+function downloadRepeatCsv(rows){
+  const header = ['TU', 'Fault code', 'Location', 'Occurrences', 'Last seen', 'Escalated', 'Count at escalation', 'Re-arms at', 'Escalated by', 'Escalated at', 'Note', 'Exported at'];
+  const now = new Date().toISOString();
+  const esc = v => { const t = String(v == null ? '' : v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const lines = [header.join(',')].concat(rows.map(e => [
+    e.tu, e.code, e.location || '', e.count, formatAteneaTimestamp(e.lastTs),
+    e.needsEscalation ? 'No' : 'Yes',
+    e.countAtAck == null ? '' : e.countAtAck,
+    e.countAtAck == null ? '' : (e.countAtAck + REPEAT_REARM_AFTER),
+    (e.ack && e.ack.ackedBy) || '', (e.ack && e.ack.ackedAt) || '', (e.ack && e.ack.note) || '', now
+  ].map(esc).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'repeat-faults-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderAlarmTbody(){
   const wrap = document.getElementById('alarmListWrap'); if (!wrap) return;
@@ -2857,14 +3016,36 @@ function computeRepeatFaults(){
   });
   return Object.values(map);
 }
+function classifyRepeatRows(){
+  const rows = computeRepeatFaults().filter(e => e.count >= repeatMinCount);
+  rows.forEach(e => {
+    const ack = repeatAckCache[repeatKey(e.tu, e.code)];
+    e.ack = ack || null;
+    e.countAtAck = ack ? (ack.countAtAck || 0) : null;
+    // Re-arms once it has happened REPEAT_REARM_AFTER more times since escalation.
+    e.needsEscalation = !ack || (e.count >= (ack.countAtAck || 0) + REPEAT_REARM_AFTER);
+  });
+  const pend = new Map(), esc = new Set();
+  rows.forEach(e => {
+    const tu = String(e.tu).trim();
+    if (e.needsEscalation) pend.set(tu, Math.max(pend.get(tu) || 0, e.count));
+    else esc.add(tu);
+  });
+  repeatPendingTus = pend;
+  repeatEscalatedTus = esc;
+  return rows.sort((a, b) =>
+    (a.needsEscalation === b.needsEscalation ? 0 : (a.needsEscalation ? -1 : 1)) ||
+    b.count - a.count || String(a.tu).localeCompare(String(b.tu)));
+}
 function renderRepeatFaults(){
   const wrap = document.getElementById('repeatWrap');
   if (!wrap) return;
-  const rows = computeRepeatFaults().filter(e => e.count >= repeatMinCount)
-    .sort((a, b) => b.count - a.count || String(a.tu).localeCompare(String(b.tu)));
+  const rows = classifyRepeatRows();
   const badge = document.getElementById('repeatBadge');
-  if (badge) { badge.textContent = rows.length; badge.hidden = !rows.length; }
-  const sel = `<label>Min occurrences <select id="repeatMinSel">${[2,3,5,10].map(n => `<option value="${n}"${repeatMinCount === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`;
+  const pendingCount = rows.filter(r => r.needsEscalation).length;
+  if (badge) { badge.textContent = pendingCount; badge.hidden = !pendingCount; }
+  const sel = `<label>Min occurrences <select id="repeatMinSel">${[2,3,5,10].map(n => `<option value="${n}"${repeatMinCount === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`
+    + ` <button class="btn-manual" id="repeatExportBtn" type="button"${rows.length ? '' : ' disabled'}>Export CSV</button>`;
   let html = `<div class="alarm-table-head">
     <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)</span></div>
     <div class="alarm-table-actions">${sel}</div>
@@ -2873,24 +3054,77 @@ function renderRepeatFaults(){
     html += `<div class="alarm-table-scroll"><div class="alarm-table-empty">No unit has ${repeatMinCount} or more of the same fault in the latest records.</div></div>`;
   } else {
     html += `<div class="alarm-table-scroll"><table class="alarm-table">
-      <thead><tr><th>TU</th><th>Fault code</th><th>Location</th><th>Occurrences</th><th>Last seen</th></tr></thead>
-      <tbody>${rows.map(e => `
-        <tr data-tu="${escapeAttr(e.tu)}" tabindex="0" role="button" aria-label="Open ${escapeAttr(e.tu)} details">
-          <td class="al-tu">${escapeHtml(e.tu)}</td>
+      <thead><tr><th>TU</th><th>Fault code</th><th>Location</th><th>Occurrences</th><th>Last seen</th><th>Escalation</th></tr></thead>
+      <tbody>${rows.map((e, i) => `
+        <tr class="${e.needsEscalation ? 'repeat-pending' : 'repeat-done'}">
+          <td class="al-tu"><span class="repeat-tu" data-tu="${escapeAttr(e.tu)}" role="button" tabindex="0">${escapeHtml(e.tu)}</span></td>
           <td>${escapeHtml(e.code)}</td>
           <td>${escapeHtml(e.location || '')}</td>
           <td><span class="repeat-count">${e.count}</span></td>
           <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(e.lastTs))}</td>
+          <td style="white-space:nowrap">${
+            e.needsEscalation
+              ? `<button class="btn-manual repeat-esc-btn" data-idx="${i}">${e.ack ? 'Re-escalate' : 'Escalate'}</button>`
+              : `<span class="repeat-badge-ok">Escalated at ${e.countAtAck}</span><div class="repeat-sub">${escapeHtml(e.ack && e.ack.ackedBy ? e.ack.ackedBy : '')}${e.ack && e.ack.ackedAt ? ' · ' + new Date(e.ack.ackedAt).toLocaleDateString() : ''}<br>re-arms at ${(e.countAtAck || 0) + REPEAT_REARM_AFTER}</div>`
+          }</td>
         </tr>`).join('')}</tbody>
     </table></div>`;
   }
   wrap.innerHTML = html;
   const ms = document.getElementById('repeatMinSel');
   if (ms) ms.addEventListener('change', () => { repeatMinCount = parseInt(ms.value, 10) || 3; renderRepeatFaults(); });
-  wrap.querySelectorAll('tbody tr[data-tu]').forEach(tr => {
-    tr.addEventListener('click', () => openUnitModal(tr.dataset.tu));
-    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(tr.dataset.tu); } });
+  wrap.querySelectorAll('.repeat-tu').forEach(el => {
+    el.addEventListener('click', () => openUnitModal(el.dataset.tu));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openUnitModal(el.dataset.tu); } });
   });
+  wrap.querySelectorAll('.repeat-esc-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const e = rows[+btn.dataset.idx];
+      if (!e) return;
+      if (!confirm(`Escalate ${e.tu} — ${e.code}?\n\n${e.count} occurrences. It will re-appear here after ${REPEAT_REARM_AFTER} more.`)) return;
+      const note = prompt('Note (optional) — e.g. work order or parts reference:', (e.ack && e.ack.note) || '') || '';
+      btn.disabled = true; btn.textContent = 'Saving…';
+      // The save and the redraw are reported separately: a redraw bug must
+      // never be blamed on Back4App permissions.
+      try {
+        await saveRepeatAck(e.tu, e.code, e.count, note);
+      } catch (err) {
+        btn.disabled = false; btn.textContent = e.ack ? 'Re-escalate' : 'Escalate';
+        alert('Could not save the escalation: ' + ((err && err.message) || err) +
+              '\n\nCheck that the ' + REPEAT_ACK_CLASS + ' class allows create and update.');
+        return;
+      }
+      try {
+        classifyRepeatRows();
+        renderRepeatFaults();
+        render({ units: Object.values(lastUnitsByTu), _meta: { generated: new Date().toISOString() } });
+      } catch (err) {
+        console.error('Escalation saved, but redrawing failed:', err);
+      }
+    });
+  });
+  const rex = document.getElementById('repeatExportBtn');
+  if (rex) rex.addEventListener('click', () => downloadRepeatCsv(rows));
+}
+
+function downloadRepeatCsv(rows){
+  const header = ['TU', 'Fault code', 'Location', 'Occurrences', 'Last seen', 'Escalated', 'Count at escalation', 'Re-arms at', 'Escalated by', 'Escalated at', 'Note', 'Exported at'];
+  const now = new Date().toISOString();
+  const esc = v => { const t = String(v == null ? '' : v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const lines = [header.join(',')].concat(rows.map(e => [
+    e.tu, e.code, e.location || '', e.count, formatAteneaTimestamp(e.lastTs),
+    e.needsEscalation ? 'No' : 'Yes',
+    e.countAtAck == null ? '' : e.countAtAck,
+    e.countAtAck == null ? '' : (e.countAtAck + REPEAT_REARM_AFTER),
+    (e.ack && e.ack.ackedBy) || '', (e.ack && e.ack.ackedAt) || '', (e.ack && e.ack.note) || '', now
+  ].map(esc).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'repeat-faults-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function renderAlarmList(units) {
   const wrap = document.getElementById('alarmListWrap');

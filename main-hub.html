@@ -446,6 +446,7 @@
   .b4a-split h5{margin:0 0 6px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--ink-faint)}
   .b4a-bar{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
   .b4a-note{font-size:11px;color:var(--ink-faint);margin-top:12px;line-height:1.5}
+  .ver-warn{font-family:var(--mono);font-size:11px;font-weight:600;color:#1a1300;background:var(--amber);border-radius:6px;padding:4px 9px;margin-right:8px;white-space:nowrap}
   .perm-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px 18px;max-width:900px}
   .perm-item{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);cursor:pointer}
   .perm-item input{width:16px;height:16px;min-width:0;flex:0 0 auto;margin:0}
@@ -576,6 +577,7 @@
     <span class="sub-title">APC</span>
     <span class="sub">Train inspection console</span>
     <div class="spacer"></div>
+    <span class="ver-warn" id="apcVerWarn" hidden></span>
     <a class="btn icon" id="apcOpen" href="./train_inspection.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
   </div>
   <iframe id="apcFrame" title="APC — Train inspection console"></iframe>
@@ -665,6 +667,7 @@
     <span class="sub-title">Fleet Status</span>
     <div class="spacer"></div>
     <button class="btn icon" id="fleetstatusReload" title="Reload">⟳</button>
+    <span class="ver-warn" id="fleetstatusVerWarn" hidden></span>
     <a class="btn icon" id="fleetstatusOpen" href="./fleet-status.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
   </div>
   <iframe id="fleetstatusFrame" title="AOR Fleet Status Panel"></iframe>
@@ -759,7 +762,11 @@
 /* ============================================================
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
-const APP_VERSION = "5.3";
+/* GLOBAL VERSION — one number for the whole suite. When anything changes,
+   bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
+   The hub checks the embedded pages against this and flags any mismatch. */
+const APP_VERSION = "5.5";
+window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
    LOGIN — one shared account for all technicians (no signup).
@@ -984,8 +991,8 @@ function showView(name){
   const _mod=MODULES.find(m=>m.view===name); if(_mod && (m_disabled(_mod) || !userCan(_mod))) name="home";
   document.querySelectorAll(".view").forEach(v=>v.style.display="none");
   const el = $(name+"View") || $("homeView");
-  if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./train_inspection.html"); }
-  if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src","./fleet-status.html"); }
+  if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src",vurl("./train_inspection.html")); }
+  if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src",vurl("./fleet-status.html")); }
   if(el) el.style.display="";
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
@@ -1258,6 +1265,32 @@ async function loadStopList(){
 /* ---------- Admin: user management ---------- */
 const PERMS=[["Stabling","Stabling"],["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Admin","Admin"]];
 let adminLoaded=false, adminUsers=[];
+/* ---------- Global version cross-check ----------
+ * Each embedded page carries its own APP_VERSION. When a frame loads, compare
+ * it with the hub's. A difference means one of the files on the server, or in
+ * this browser's cache, is out of date. */
+/* Embedded pages are requested with the version in the URL. A hard refresh
+   re-fetches the hub but can still serve an iframe from cache; a new ?v=
+   value is a URL the cache has never seen, so every release is fetched fresh. */
+function vurl(path){ return path + '?v=' + encodeURIComponent(APP_VERSION); }
+function checkFrameVersion(frameId, warnId, label){
+  const f=$(frameId), w=$(warnId); if(!f||!w) return;
+  f.addEventListener('load', ()=>{
+    let v;
+    try{ v=f.contentWindow && f.contentWindow.APP_VERSION; }catch(e){ v=undefined; }
+    if(!f.getAttribute('src')) return;
+    if(v===APP_VERSION){ w.hidden=true; return; }
+    w.hidden=false;
+    w.textContent = v ? (label+' v'+v+' \u2260 hub v'+APP_VERSION+' \u2014 hard refresh') : (label+' unversioned \u2014 stale file, hard refresh');
+    w.title='Mismatched files. Press Ctrl+Shift+R. If it persists, open '+label+' directly and hard-refresh it, or check it was redeployed.';
+    console.warn('[version] '+label+' is '+(v||'unversioned')+', hub is '+APP_VERSION);
+  });
+}
+checkFrameVersion("apcFrame","apcVerWarn","train_inspection.html");
+checkFrameVersion("fleetstatusFrame","fleetstatusVerWarn","fleet-status.html");
+if($("apcOpen")) $("apcOpen").href=vurl("./train_inspection.html");
+if($("fleetstatusOpen")) $("fleetstatusOpen").href=vurl("./fleet-status.html");
+
 /* ---------- Back4App traffic meter (Admin page) ---------- */
 let b4aPanelTimer=null;
 function b4aTodayKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -2104,7 +2137,7 @@ $("brandHome").onclick=()=>showView("home");
 $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
 $("fleetstatusHome").onclick=()=>showView("home");
-$("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src","./fleet-status.html"); };
+$("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src",vurl("./fleet-status.html")); };
 $("reportsHome").onclick=()=>showView("home");
 $("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
 $("errorlogHome").onclick=()=>showView("home");

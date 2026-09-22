@@ -123,6 +123,7 @@ body{
   color:var(--cyan);margin:0 0 10px;display:flex;align-items:center;gap:10px;
 }
 .eyebrow::before{content:"";width:18px;height:1px;background:var(--cyan);display:inline-block;}
+.app-ver{display:inline-block;vertical-align:middle;margin-left:8px;padding:2px 8px;border:1px solid rgba(255,255,255,.18);border-radius:999px;font-size:12px;font-weight:600;letter-spacing:.3px;opacity:.7;font-family:ui-monospace,Consolas,monospace}
 h1{
   font-family:'Space Grotesk',sans-serif;font-weight:700;
   font-size:clamp(28px,4vw,40px);margin:0 0 6px;letter-spacing:-.01em;
@@ -434,7 +435,7 @@ button.ghost{background:transparent;}
 </div>
 <div class="wrap">
   <p class="eyebrow">Rolling Stock · Door Sensor Audit</p>
-  <h1>APC Inspection</h1>
+  <h1>APC Inspection <span class="app-ver" id="appVer"></span></h1>
   <p class="sub">Click any door on the diagram to record the state, calibration, replacement need, and water ingress signs for its 4 sensors.</p>
 
   <div class="trainid-box">
@@ -561,6 +562,15 @@ button.ghost{background:transparent;}
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
 <script>
+/* GLOBAL VERSION — must match main-hub.html and fleet-status.html. */
+const APP_VERSION = "5.5";
+window.APP_VERSION = APP_VERSION;
+(function showAppVersion(){
+  const v = document.getElementById('appVer');
+  if (v) v.textContent = 'v' + APP_VERSION;
+  else document.addEventListener('DOMContentLoaded', showAppVersion, { once: true });
+})();
+
 /* shared Back4App auth: same app + session as the main console login */
 const B4A = { serverURL:"https://parseapi.back4app.com/", appId:"9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio", jsKey:"OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM", className:"DoorSensorInspection" };
 try{ Parse.initialize(B4A.appId, B4A.jsKey); Parse.serverURL = B4A.serverURL; }catch(e){}

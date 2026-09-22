@@ -169,6 +169,9 @@
     letter-spacing:.2px;
   }
 
+  .panel-ver{ display:inline-block; vertical-align:middle; margin-left:8px; padding:2px 8px;
+    border:1px solid var(--panel-border); border-radius:999px; font-size:12px; font-weight:600;
+    letter-spacing:.3px; color:var(--ink-muted); font-family:ui-monospace,Consolas,monospace; }
   .title-block p{
     margin:4px 0 0;
     color:var(--ink-muted);
@@ -970,7 +973,7 @@
       <div class="title-block">
         <img class="logo" src="data:image/png;base64,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" alt="Auckland One Rail" />
         <div>
-          <h1>AOR Fleet Status Panel</h1>
+          <h1>AOR Fleet Status Panel <span class="panel-ver" id="panelVer"></span></h1>
           <p id="demoFlagInline"></p>
         </div>
       </div>
@@ -1601,6 +1604,16 @@ const TU_STATUS_FIELDS = {
   stop: ['STOP', 'stop'],
   reason: ['REASON', 'reason']
 };
+/* GLOBAL VERSION — must match main-hub.html and train_inspection.html. */
+const APP_VERSION = "5.5";
+window.APP_VERSION = APP_VERSION;
+(function showPanelVersion() {
+  const v = document.getElementById('panelVer');
+  if (v) v.textContent = 'v' + APP_VERSION;
+  else document.addEventListener('DOMContentLoaded', showPanelVersion, { once: true });
+})();
+console.info('AOR Fleet Status Panel v' + APP_VERSION);
+
 /* ── Back4App request budget ──────────────────────────────────────────────
  * Every poll costs requests. At 30s that's 2 req x 120/hr = 5,760 req/day
  * per open tab, 24/7. These three settings are the dials:
@@ -2078,7 +2091,7 @@ function downloadDailyResetAlarmsCsv(units) {
 // configured, falls back to a session-only localAckOverrides entry when
 // not) so a daily-reset acknowledgment behaves identically to a manual one.
 async function acknowledgeAlarmForDailyReset(tu, alarm) {
-  const result = await updateLiveAlarmAcknowledged(alarm.object_id, true);
+  const result = await updateLiveAlarmAcknowledged(alarm.object_id, true, { manual: true });
   if (!result.persisted) {
     const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
     localAckOverrides[tu + '|' + alarmKey] = true;
@@ -2195,6 +2208,16 @@ function isFlagOff(rec) {
 // Identity used to pair an OFF record with the ON it clears: TU + the
 // alarm's id/code (case-insensitive). An OFF whose key matches an ON marks
 // that ON acknowledged.
+// When the alarm event actually happened: Atenea's own timestamp, falling
+// back to the record's createdAt. 0 means "unknown" — callers treat unknown
+// times conservatively (they never clear an alarm on a time they can't prove).
+function alarmEventMs(rec) {
+  const t = ateneaSortMs(normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp)));
+  if (t > 0) return t;
+  const c = rec && rec.createdAt ? Date.parse(rec.createdAt) : NaN;
+  return isNaN(c) ? 0 : c;
+}
+
 function alarmMatchKey(rec, tu) {
   const id = pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '';
   // Location is part of the identity: the same alarm code on the same unit can
@@ -2247,7 +2270,7 @@ function formatAteneaTimestamp(iso) {
 async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,AteneaTimestamp,ateneaTimestamp';
+  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,manual_ack,AteneaTimestamp,ateneaTimestamp';
   countReq('get');
   const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt&keys=' + encodeURIComponent(keys), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
@@ -2332,7 +2355,10 @@ async function saveRepeatAck(tu, code, count, note) {
   return true;
 }
 
-async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
+// opts.manual === true marks a HUMAN acknowledgement: manual_ack mirrors the
+// acknowledged value (true on ack, false on un-ack). Automatic OFF-matching
+// omits it and leaves manual_ack untouched, so the two can always be told apart.
+async function updateLiveAlarmAcknowledged(objectId, acknowledged, opts) {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey || !objectId) return { persisted: false }; // demo/local-only mode, or no live record to write to
 
@@ -2345,7 +2371,7 @@ async function updateLiveAlarmAcknowledged(objectId, acknowledged) {
   const res = await fetch(`https://parseapi.back4app.com/classes/Live_Alarms/${objectId}`, {
     method: 'PUT',
     headers,
-    body: JSON.stringify({ acknowledged })
+    body: JSON.stringify((opts && opts.manual === true) ? { acknowledged, manual_ack: acknowledged } : { acknowledged })
   });
   if (!res.ok) {
     const bodyText = await res.text().catch(() => '');
@@ -2472,11 +2498,17 @@ async function loadFleet() {
 
   // OFF ⇒ acknowledge the matching ON. Keyed on TU + alarm id/code, so an
   // "off" record marks the alarm it clears as acknowledged.
-  const offKeys = new Set();
+  // Latest OFF time per alarm key. An ON is only cleared by an OFF that
+  // happened AT OR AFTER it — an OFF left over from an earlier occurrence of
+  // the same fault must not clear a new one.
+  const offLatest = new Map();
   liveRecords.forEach(rec => {
     if (!isFlagOff(rec)) return;
     const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
-    if (tu) offKeys.add(alarmMatchKey(rec, tu));
+    if (!tu) return;
+    const key = alarmMatchKey(rec, tu);
+    const ms = alarmEventMs(rec);
+    if (!offLatest.has(key) || ms > offLatest.get(key)) offLatest.set(key, ms);
   });
   const pendingAutoAck = [];
 
@@ -2485,7 +2517,10 @@ async function loadFleet() {
     if (!tu) { unmatched++; return; }
     if (isFlagOff(rec)) { flaggedOffCount++; return; }
     const storedAck = isAcknowledgedTrue(rec);
-    const autoAck = offKeys.has(alarmMatchKey(rec, tu));
+    const onMs = alarmEventMs(rec);
+    const offMs = offLatest.get(alarmMatchKey(rec, tu));
+    // Unknown ON time => can't prove the OFF came after it => leave it active.
+    const autoAck = onMs > 0 && offMs !== undefined && offMs >= onMs;
     if (autoAck && !storedAck && rec.objectId) pendingAutoAck.push(rec.objectId);
     const status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity));
     const entry = {
@@ -2495,6 +2530,7 @@ async function loadFleet() {
       alarm_key: pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'alarm',
       object_id: rec.objectId,
       acknowledged: storedAck || autoAck,
+      manual_ack: rec.manual_ack === true,
       location: pickField(rec, LIVE_ALARMS_FIELDS.location) || '',
       atenea_timestamp: normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp))
     };
@@ -3135,45 +3171,38 @@ function renderAlarmList(units) {
   // one row (shown acknowledged) instead of appearing twice. Records without
   // a partner show on their own.
   const rows = [];
-  const byPair = new Map();
+  // One row per alarm (TU + identity + location). The row reflects the
+  // alarm's CURRENT state: cleared only when the latest OFF is at or after the
+  // latest ON. An older OFF from a previous occurrence no longer hides a new ON.
+  const groups = new Map();
   (lastLiveRecords || []).forEach(rec => {
     const tuRaw = pickField(rec, LIVE_ALARMS_FIELDS.tu);
     if (!tuRaw) return;
     const tu = String(tuRaw).trim();
-    const off = isFlagOff(rec);
     const key = alarmMatchKey(rec, tu);
-    const ts = normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp));
-    const row = {
-      tu,
-      unitStatus: lastUnitsByTu[tu] ? lastUnitsByTu[tu].status : classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)),
-      status: classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)),
-      alert_code: pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || 'Active alarm',
-      alert_message: pickField(rec, LIVE_ALARMS_FIELDS.message) || '',
-      location: pickField(rec, LIVE_ALARMS_FIELDS.location) || '',
-      acknowledged: isAcknowledgedTrue(rec),
-      atenea_timestamp: ts,
-      object_id: rec.objectId,
-      cleared: off
-    };
-    const existing = byPair.get(key);
-    if (!existing) { byPair.set(key, row); rows.push(row); return; }
-    // Merge the partner into the row already held for this alarm.
-    existing.cleared = existing.cleared || off;
-    existing.acknowledged = existing.acknowledged || row.acknowledged || existing.cleared;
-    // Keep the ON record's details/identity, but surface the latest timestamp.
-    if (off) {
-      if (ateneaSortMs(ts) > ateneaSortMs(existing.atenea_timestamp)) existing.atenea_timestamp = ts;
-      if (!existing.location) existing.location = row.location;
-    } else {
-      existing.status = row.status;
-      existing.alert_code = row.alert_code;
-      existing.alert_message = row.alert_message || existing.alert_message;
-      existing.location = row.location || existing.location;
-      existing.object_id = row.object_id;
-      if (ateneaSortMs(existing.atenea_timestamp) === 0) existing.atenea_timestamp = ts;
-    }
+    const ms = alarmEventMs(rec);
+    let g = groups.get(key);
+    if (!g) { g = { tu, onRec: null, onMs: -1, offRec: null, offMs: -1 }; groups.set(key, g); }
+    if (isFlagOff(rec)) { if (ms >= g.offMs) { g.offMs = ms; g.offRec = rec; } }
+    else { if (ms >= g.onMs) { g.onMs = ms; g.onRec = rec; } }
   });
-  rows.forEach(r => { if (r.cleared) r.acknowledged = true; });
+  groups.forEach(g => {
+    const base = g.onRec || g.offRec;
+    // An OFF with no ON in the loaded window is shown on its own, as cleared.
+    const cleared = g.onRec ? (g.onMs > 0 && !!g.offRec && g.offMs >= g.onMs) : true;
+    rows.push({
+      tu: g.tu,
+      unitStatus: lastUnitsByTu[g.tu] ? lastUnitsByTu[g.tu].status : classifySeverity(pickField(base, LIVE_ALARMS_FIELDS.severity)),
+      status: classifySeverity(pickField(base, LIVE_ALARMS_FIELDS.severity)),
+      alert_code: pickField(base, LIVE_ALARMS_FIELDS.code) || pickField(base, LIVE_ALARMS_FIELDS.severity) || 'Active alarm',
+      alert_message: pickField(base, LIVE_ALARMS_FIELDS.message) || '',
+      location: pickField(base, LIVE_ALARMS_FIELDS.location) || '',
+      acknowledged: cleared || (g.onRec ? isAcknowledgedTrue(g.onRec) : true),
+      atenea_timestamp: normalizeAteneaTimestamp(pickField(base, LIVE_ALARMS_FIELDS.atenea_timestamp)),
+      object_id: base.objectId,
+      cleared
+    });
+  });
 
   const ackCount = rows.filter(r => r.acknowledged).length;
   const unackCount = rows.length - ackCount;
@@ -3665,7 +3694,7 @@ function renderModalBody() {
     // acknowledge control, so any one can be actioned (not just the worst).
     html += `<div class="modal-alarm-list">` + allAlarms.map((a, i) => `
       <div class="modal-detail${a.acknowledged ? ' is-ack' : ''}">
-        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}${a.acknowledged ? ' · acknowledged' : ''}</div>
+        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}${a.acknowledged ? (a.manual_ack ? ' · acknowledged (manual)' : ' · acknowledged (auto)') : ''}</div>
         <div class="code">${escapeHtml(a.alert_code || 'Active alarm')}</div>
         <div class="msg">${escapeHtml(a.alert_message || 'No further detail available.')}</div>
         ${a.location ? `<div class="msg" style="opacity:.75">Location: ${escapeHtml(a.location)}</div>` : ''}
@@ -3750,7 +3779,7 @@ async function handleAcknowledgeAlarm(u, alarm, btn) {
   const newValue = !alarm.acknowledged;
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   try {
-    const result = await updateLiveAlarmAcknowledged(alarm.object_id, newValue);
+    const result = await updateLiveAlarmAcknowledged(alarm.object_id, newValue, { manual: true });
     if (!result.persisted) {
       const alarmKey = alarm.alarm_key || alarm.alert_code || alarm.status;
       localAckOverrides[u.tu + '|' + alarmKey] = newValue;
@@ -3788,7 +3817,7 @@ async function handleAcknowledge(u) {
   const newValue = !u.acknowledged;
 
   try {
-    const result = await updateLiveAlarmAcknowledged(u.object_id, newValue);
+    const result = await updateLiveAlarmAcknowledged(u.object_id, newValue, { manual: true });
     if (!result.persisted) {
       const alarmKey = u.alarm_key || u.alert_code || u.status;
       localAckOverrides[u.tu + '|' + alarmKey] = newValue;

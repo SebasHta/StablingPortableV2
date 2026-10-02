@@ -446,6 +446,7 @@
   .b4a-split h5{margin:0 0 6px;font-family:var(--cond);text-transform:uppercase;letter-spacing:.05em;font-size:11px;color:var(--ink-faint)}
   .b4a-bar{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
   .b4a-note{font-size:11px;color:var(--ink-faint);margin-top:12px;line-height:1.5}
+  .update-bar{position:fixed;left:0;right:0;bottom:0;z-index:300;display:flex;align-items:center;justify-content:center;gap:14px;background:var(--amber);color:#1a1300;font-family:var(--mono);font-size:13px;font-weight:600;padding:10px 16px;box-shadow:0 -4px 14px rgba(0,0,0,.35)}
   .ver-warn{font-family:var(--mono);font-size:11px;font-weight:600;color:#1a1300;background:var(--amber);border-radius:6px;padding:4px 9px;margin-right:8px;white-space:nowrap}
   .perm-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px 18px;max-width:900px}
   .perm-item{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink-dim);cursor:pointer}
@@ -765,7 +766,7 @@
 /* GLOBAL VERSION — one number for the whole suite. When anything changes,
    bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
    The hub checks the embedded pages against this and flags any mismatch. */
-const APP_VERSION = "5.5";
+const APP_VERSION = "5.6";
 window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
@@ -1290,6 +1291,44 @@ checkFrameVersion("apcFrame","apcVerWarn","train_inspection.html");
 checkFrameVersion("fleetstatusFrame","fleetstatusVerWarn","fleet-status.html");
 if($("apcOpen")) $("apcOpen").href=vurl("./train_inspection.html");
 if($("fleetstatusOpen")) $("fleetstatusOpen").href=vurl("./fleet-status.html");
+
+
+/* ── Update check ──────────────────────────────────────────────────────────
+ * A browser can serve this whole page from cache, so a user may be looking at
+ * an old build with no idea. version.json is fetched with cache:'no-store' and
+ * a unique query string, so it always comes from the server. If it reports a
+ * different version than this file was built as, the page is stale.
+ * ---------------------------------------------------------------------- */
+async function checkForUpdate(){
+  try{
+    const res = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return;
+    const data = await res.json();
+    if(!data || !data.version || data.version === APP_VERSION) return;
+    onUpdateAvailable(data.version);
+  }catch(e){ /* offline or file missing — ignore, try again later */ }
+}
+function reloadToLatest(v){
+  // Replace rather than reload, with the version in the query string, so the
+  // request can't be answered from the cache entry that made us stale.
+  const base = location.pathname.split('?')[0];
+  location.replace(base + '?v=' + encodeURIComponent(v || Date.now()));
+}
+
+let updateBannerShown = false;
+function onUpdateAvailable(v){
+  if(updateBannerShown) return;
+  updateBannerShown = true;
+  const bar = document.createElement('div');
+  bar.className = 'update-bar';
+  bar.innerHTML = '<span>Version ' + escapeHtml(v) + ' is available \u2014 you are running ' + escapeHtml(APP_VERSION) + '.</span>' +
+                  '<button class="btn tiny" id="updateNowBtn">Reload now</button>';
+  document.body.appendChild(bar);
+  document.getElementById('updateNowBtn').onclick = () => reloadToLatest(v);
+}
+checkForUpdate();
+setInterval(checkForUpdate, 600000);   // every 10 minutes
+document.addEventListener('visibilitychange', () => { if(!document.hidden) checkForUpdate(); });
 
 /* ---------- Back4App traffic meter (Admin page) ---------- */
 let b4aPanelTimer=null;

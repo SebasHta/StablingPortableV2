@@ -1605,7 +1605,7 @@ const TU_STATUS_FIELDS = {
   reason: ['REASON', 'reason']
 };
 /* GLOBAL VERSION — must match main-hub.html and train_inspection.html. */
-const APP_VERSION = "5.5";
+const APP_VERSION = "5.6";
 window.APP_VERSION = APP_VERSION;
 (function showPanelVersion() {
   const v = document.getElementById('panelVer');
@@ -1613,6 +1613,38 @@ window.APP_VERSION = APP_VERSION;
   else document.addEventListener('DOMContentLoaded', showPanelVersion, { once: true });
 })();
 console.info('AOR Fleet Status Panel v' + APP_VERSION);
+
+
+/* ── Update check ──────────────────────────────────────────────────────────
+ * A browser can serve this whole page from cache, so a user may be looking at
+ * an old build with no idea. version.json is fetched with cache:'no-store' and
+ * a unique query string, so it always comes from the server. If it reports a
+ * different version than this file was built as, the page is stale.
+ * ---------------------------------------------------------------------- */
+async function checkForUpdate(){
+  try{
+    const res = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) return;
+    const data = await res.json();
+    if(!data || !data.version || data.version === APP_VERSION) return;
+    onUpdateAvailable(data.version);
+  }catch(e){ /* offline or file missing — ignore, try again later */ }
+}
+function reloadToLatest(v){
+  // Replace rather than reload, with the version in the query string, so the
+  // request can't be answered from the cache entry that made us stale.
+  const base = location.pathname.split('?')[0];
+  location.replace(base + '?v=' + encodeURIComponent(v || Date.now()));
+}
+
+function onUpdateAvailable(v){
+  // Unattended display: no one is here to click anything, so reload itself.
+  console.warn('[update] server has v' + v + ', this panel is v' + APP_VERSION + ' — reloading');
+  reloadToLatest(v);
+}
+checkForUpdate();
+setInterval(checkForUpdate, 600000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden) checkForUpdate(); });
 
 /* ── Back4App request budget ──────────────────────────────────────────────
  * Every poll costs requests. At 30s that's 2 req x 120/hr = 5,760 req/day

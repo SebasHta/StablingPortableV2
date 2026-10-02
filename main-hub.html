@@ -766,7 +766,7 @@
 /* GLOBAL VERSION — one number for the whole suite. When anything changes,
    bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
    The hub checks the embedded pages against this and flags any mismatch. */
-const APP_VERSION = "5.6";
+const APP_VERSION = "5.7";
 window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
@@ -1593,7 +1593,7 @@ function apcStats(rows){
   const units={};
   rows.forEach(r=>{
     const id=(r.train_id||"UNSET").toString();
-    if(!units[id]) units[id]={id,sensors:{},comments:"",last:"",m1Ssl:"",tcarSsl:"",m2Ssl:""};
+    if(!units[id]) units[id]={id,sensors:{},comments:"",last:"",m1Ssl:"",tcarSsl:"",m2Ssl:"",hvacResealed:"",hvacDate:""};
     const key=(r.car||"")+"|"+(r.door||"")+"|"+(r.sensor||"");
     const ts=(r.timestamp||"").toString();
     const prev=units[id].sensors[key];
@@ -1602,11 +1602,13 @@ function apcStats(rows){
     if(r.m1_ssl_sensors && !units[id].m1Ssl) units[id].m1Ssl=r.m1_ssl_sensors;
     if(r.tcar_ssl_sensors && !units[id].tcarSsl) units[id].tcarSsl=r.tcar_ssl_sensors;
     if(r.m2_ssl_sensors && !units[id].m2Ssl) units[id].m2Ssl=r.m2_ssl_sensors;
+    if(r.hvac_grills_resealed && !units[id].hvacResealed) units[id].hvacResealed=r.hvac_grills_resealed;
+    if(r.hvac_resealed_date && r.hvac_resealed_date>units[id].hvacDate) units[id].hvacDate=r.hvac_resealed_date;
     if(ts>units[id].last) units[id].last=ts;
   });
   const list=Object.values(units).map(u=>{
     const s=Object.values(u.sensors);
-    return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED&&!s.some(x=>x.state==="Not Tested"),sensors:s,comments:u.comments,last:u.last,
+    return {id:u.id,count:s.length,complete:s.length>=APC_EXPECTED&&!s.some(x=>x.state==="Not Tested"),sensors:s,comments:u.comments,last:u.last,hvacResealed:u.hvacResealed,hvacDate:u.hvacDate,
       repl:s.filter(x=>x.replacement_required==="Yes"&&x.replacement_completed!=="Yes"),
       replDone:s.filter(x=>x.replacement_completed==="Yes"),
       replReq:s.filter(x=>x.replacement_required==="Yes"),
@@ -1718,8 +1720,9 @@ function buildFleetReportHTML(d){
   const rows=sumUnits.map(u=>{ const f=u.replReq.length, dn=u.replDone.length; sumFault+=f; sumDone+=dn;
     const wd=waterDoorList(u); sumWater+=wd.length;
     return '<tr><td>'+esc(u.id)+(u.inProgress?' <span style="color:#b8860b">(in progress)</span>':'')+'</td><td'+(f>0?' class="fr-fail"':'')+'>'+f+'</td><td>'+dn+'</td>'
-      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td></tr>'; }).join('')
-    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td></tr>';
+      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td>'
+      +'<td>'+esc(hvacDateText(u))+'</td></tr>'; }).join('')
+    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td><td></td></tr>';
   return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Report</h1></div>'
     +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+d.total+' units inspected</div></div>'
     +'<div class="fr-kpis"><div class="fr-kpi"><div class="v">'+d.completed+' / '+APC_FLEET_TOTAL+'</div><div class="k">Units completed</div></div>'
@@ -1728,10 +1731,15 @@ function buildFleetReportHTML(d){
     +'<div class="fr-kpi"><div class="v">'+d.calibration+'</div><div class="k">Calibration NOK</div></div>'+'<div class="fr-kpi"><div class="v">'+d.passed+' / '+d.total+'</div><div class="k">Units passing (all checks)</div></div>'+'<div class="fr-kpi">'+'<div class="v">'+d.inProgress+'</div><div class="k">Units in progress</div></div></div>'
     +'<div class="fr-charts"><div class="fr-chart"><h3>Completion</h3>'+donut+'</div><div class="fr-chart grow"><h3>Issues across fleet</h3>'+bars+'</div></div>'
     +'<div class="fr-chart" style="margin-bottom:22px"><h3>Calibration outcomes · adjusted sensors</h3>'+pieCard(d,{ink:"#111",dim:"#555",ring:"#ddd"})+'</div>'+'<h3 class="fr-th">Completed &amp; in-progress units</h3>'
-    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th><th>HVAC Resealed</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div class="fr-foot">Depot Control \u00b7 APC Fleet report \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
 }
 function generateApcReport(){ if(!reportsData) return; $("fleetReport").innerHTML=buildFleetReportHTML(reportsData); const _t=document.title; document.title="Fleet_Report"; window.print(); document.title=_t; }
+function hvacDateText(u){
+  if(!u.hvacDate) return u.hvacResealed==='No' ? 'Not resealed' : '\u2014';
+  const d=new Date(u.hvacDate+'T00:00:00');
+  return isNaN(d.getTime()) ? u.hvacDate : d.toLocaleDateString();
+}
 function waterDoorList(u){
   const seen=[]; (u.water||[]).forEach(x=>{ const loc=((x.car||'')+' '+(x.door||'')).trim(); if(loc && seen.indexOf(loc)===-1) seen.push(loc); });
   return seen;
@@ -1747,12 +1755,13 @@ function apcSummaryHTML(d){
     const tag=u.inProgress?' <span class="rep-prog-tag">in progress</span>':'';
     const wd=waterDoorList(u); if(wd.length) sumWater+=wd.length;
     return '<tr><td>'+escapeHtml(u.id)+tag+'</td><td class="'+(fault>0?'flag':'')+'">'+fault+'</td><td>'+done+'</td>'+
-      '<td class="'+(wd.length?'flag':'')+'">'+(wd.length?escapeHtml(wd.join(', ')):'\u2014')+'</td></tr>';
+      '<td class="'+(wd.length?'flag':'')+'">'+(wd.length?escapeHtml(wd.join(', ')):'\u2014')+'</td>'+
+      '<td>'+escapeHtml(hvacDateText(u))+'</td></tr>';
   }).join('');
-  const total='<tr class="rep-total"><td>Total</td><td class="'+(sumFault>0?'flag':'')+'">'+sumFault+'</td><td>'+sumDone+'</td><td class="'+(sumWater>0?'flag':'')+'">'+(sumWater||'\u2014')+(sumWater?' door(s)':'')+'</td></tr>';
+  const total='<tr class="rep-total"><td>Total</td><td class="'+(sumFault>0?'flag':'')+'">'+sumFault+'</td><td>'+sumDone+'</td><td class="'+(sumWater>0?'flag':'')+'">'+(sumWater||'\u2014')+(sumWater?' door(s)':'')+'</td><td></td></tr>';
   return '<div class="rep-summary-head">Fleet summary \u00b7 '+units.length+' completed / in-progress unit(s)</div>'+
-    '<div class="rep-tablewrap" style="max-width:860px"><table class="rep-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+total+'</tbody></table></div>'+
-    '<div style="max-width:860px;margin-top:14px;display:flex;justify-content:flex-end"><button class="btn primary" id="apcSummaryPdf" type="button" style="flex:0 0 auto;width:auto">Export summary as PDF</button></div>'+
+    '<div class="rep-tablewrap" style="max-width:1020px"><table class="rep-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th><th>HVAC Resealed</th></tr></thead><tbody>'+rows+total+'</tbody></table></div>'+
+    '<div style="max-width:1020px;margin-top:14px;display:flex;justify-content:flex-end"><button class="btn primary" id="apcSummaryPdf" type="button" style="flex:0 0 auto;width:auto">Export summary as PDF</button></div>'+
     '<div class="rep-empty" style="padding-top:10px">Select a unit above for full detail.</div>';
 }
 function wireSummaryPdf(){ const b=$("apcSummaryPdf"); if(b) b.onclick=exportSummaryPdf; }
@@ -1765,11 +1774,12 @@ function buildSummaryReportHTML(d){
   const rows=units.map(u=>{ const f=u.replReq.length, dn=u.replDone.length; sumFault+=f; sumDone+=dn;
     const wd=waterDoorList(u); sumWater+=wd.length;
     return '<tr><td>'+esc(u.id)+(u.inProgress?' <span style="color:#b8860b">(in progress)</span>':'')+'</td><td'+(f>0?' class="fr-fail"':'')+'>'+f+'</td><td>'+dn+'</td>'
-      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td></tr>'; }).join('')
-    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td></tr>';
+      +'<td'+(wd.length?' class="fr-fail"':'')+'>'+(wd.length?esc(wd.join(', ')):'\u2014')+'</td>'
+      +'<td>'+esc(hvacDateText(u))+'</td></tr>'; }).join('')
+    + '<tr class="fr-total"><td>Total</td><td'+(sumFault>0?' class="fr-fail"':'')+'>'+sumFault+'</td><td>'+sumDone+'</td><td'+(sumWater>0?' class="fr-fail"':'')+'>'+(sumWater?sumWater+' door(s)':'\u2014')+'</td><td></td></tr>';
   return '<div class="fr-head"><div><div class="fr-eyebrow">APC Fleet \u00b7 Door Sensor Inspection</div><h1>Fleet Summary</h1></div>'
     +'<div class="fr-meta">Generated '+esc(now.toLocaleString())+'<br>Fleet size: '+APC_FLEET_TOTAL+' units<br>'+units.length+' completed / in-progress</div></div>'
-    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<table class="fr-table"><thead><tr><th>Unit</th><th>Faulty Sensors</th><th>Replacement Completed</th><th>Water Ingress (door)</th><th>HVAC Resealed</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'<div class="fr-foot">Depot Control \u00b7 APC Fleet summary \u00b7 '+esc(now.toISOString().slice(0,10))+'</div>';
 }
 function exportSummaryPdf(){

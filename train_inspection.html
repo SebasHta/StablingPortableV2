@@ -299,6 +299,10 @@ button.ghost{background:transparent;}
 .ssl-field input{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
 .ssl-field input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
 .ssl-field select{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;}
+.ssl-field input[type=date]{background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);padding:10px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;color-scheme:dark;}
+.ssl-field input[type=date]:disabled{opacity:.45;}
+.ssl-field.hvac-note{justify-content:flex-end;flex:2;min-width:240px;}
+.ssl-field.hvac-note span{font-size:11.5px;line-height:1.5;color:var(--text-dim);}
 .ssl-field select:focus{outline:2px solid var(--cyan);outline-offset:1px;}
 .ssl-field.flag input{border-color:var(--red);box-shadow:0 0 0 1px var(--red);}
 .ssl-field.flag label{color:var(--red);}
@@ -451,6 +455,11 @@ button.ghost{background:transparent;}
   </div>
   <div class="ssl-warn" id="sslWarn" hidden></div>
   <div class="ssl-box">
+    <div class="ssl-field"><label for="hvacResealedInput">HVAC Grills Resealed</label><select id="hvacResealedInput"><option value="">—</option><option>Yes</option><option>No</option></select></div>
+    <div class="ssl-field"><label for="hvacResealedDateInput">Resealed Date</label><input type="date" id="hvacResealedDateInput"></div>
+    <div class="ssl-field hvac-note"><span id="hvacHint">Resealing the HVAC grills clears water ingress in about 90% of cases — record it so later water findings can be read against it.</span></div>
+  </div>
+  <div class="ssl-box">
     <div class="ssl-field"><label for="m1ParamInput">M1 Parameters</label><select id="m1ParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
     <div class="ssl-field"><label for="m2ParamInput">M2 Parameters</label><select id="m2ParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
     <div class="ssl-field"><label for="tcarParamInput">TCAR Parameters</label><select id="tcarParamInput"><option value="">—</option><option>OK</option><option>NOK</option><option>Adjusted</option></select></div>
@@ -563,7 +572,7 @@ button.ghost{background:transparent;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
 <script>
 /* GLOBAL VERSION — must match main-hub.html and fleet-status.html. */
-const APP_VERSION = "5.6";
+const APP_VERSION = "5.7";
 window.APP_VERSION = APP_VERSION;
 (function showAppVersion(){
   const v = document.getElementById('appVer');
@@ -598,6 +607,7 @@ let currentCar = null, currentDoor = null;
 let trainId = '';
 let m1Ssl = '', tcarSsl = '', m2Ssl = '';
 let m1Param = '', m2Param = '', tcarParam = '';
+let hvacResealed = '', hvacResealedDate = '';
 let dataDirty = false;
 function markDirty(){ dataDirty = true; }
 window.addEventListener('beforeunload', (e) => { if (dataDirty && Object.keys(records).length){ e.preventDefault(); e.returnValue = 'You have unsaved inspection data — it will be lost if you close before uploading or saving.'; return e.returnValue; } });
@@ -617,6 +627,23 @@ const tcarParamInput = document.getElementById('tcarParamInput');
 m1ParamInput.addEventListener('change', () => { m1Param = m1ParamInput.value; markDirty(); });
 m2ParamInput.addEventListener('change', () => { m2Param = m2ParamInput.value; markDirty(); });
 tcarParamInput.addEventListener('change', () => { tcarParam = tcarParamInput.value; markDirty(); });
+const hvacResealedInput = document.getElementById('hvacResealedInput');
+const hvacResealedDateInput = document.getElementById('hvacResealedDateInput');
+function syncHvacDateState(){
+  const yes = hvacResealed === 'Yes';   // a date only means something once Yes is chosen
+  hvacResealedDateInput.disabled = !yes;
+  if (!yes && hvacResealedDate) { hvacResealedDate = ''; hvacResealedDateInput.value = ''; }
+}
+hvacResealedInput.addEventListener('change', () => {
+  hvacResealed = hvacResealedInput.value;
+  if (hvacResealed === 'Yes' && !hvacResealedDateInput.value) {
+    hvacResealedDateInput.value = new Date().toISOString().slice(0,10);
+    hvacResealedDate = hvacResealedDateInput.value;
+  }
+  syncHvacDateState(); markDirty();
+});
+hvacResealedDateInput.addEventListener('change', () => { hvacResealedDate = hvacResealedDateInput.value; markDirty(); });
+syncHvacDateState();
 function checkSslFlags(){
   const items = [['m1SslInput','M1'],['tcarSslInput','TCAR'],['m2SslInput','M2']];
   const low = [];
@@ -886,6 +913,8 @@ function toRows(){
     m1_ssl_sensors: m1Ssl || '',
     tcar_ssl_sensors: tcarSsl || '',
     m2_ssl_sensors: m2Ssl || '',
+    hvac_grills_resealed: hvacResealed || '',
+    hvac_resealed_date: hvacResealedDate || '',
     m1_parameters: m1Param || '',
     m2_parameters: m2Param || '',
     tcar_parameters: tcarParam || '',
@@ -913,6 +942,10 @@ document.getElementById('btnReset').addEventListener('click', () => {
   if (!confirm('Clear all recorded sensor data? This cannot be undone.')) return;
   Object.keys(records).forEach(k => delete records[k]);
   Object.keys(b4aObjects).forEach(k => delete b4aObjects[k]); importedTrainId = ''; dataDirty = false;
+  hvacResealed = ''; hvacResealedDate = '';
+  if (hvacResealedInput) hvacResealedInput.value = '';
+  if (hvacResealedDateInput) hvacResealedDateInput.value = '';
+  syncHvacDateState();
   document.querySelectorAll('rect.door').forEach(r => r.setAttribute('class', 'door status-pending'));
   renderLog(); renderSummary();
 });
@@ -954,6 +987,16 @@ document.getElementById('btnReport').addEventListener('click', () => {
     + `<table><thead><tr><th>Car</th><th>Parameter</th></tr></thead><tbody>`
     + paramData.map(d => { const bad = d.v === 'NOK'; const shown = (d.v === '' || d.v == null) ? '&mdash;' : d.v;
         return `<tr><td>${d.label}</td><td ${bad?'class="rep-flag"':''}>${shown}</td></tr>`; }).join('')
+    + `</tbody></table></div>`;
+
+  const hvacShown = hvacResealed || '&mdash;';
+  const hvacDateShown = hvacResealedDate
+    ? new Date(hvacResealedDate + 'T00:00:00').toLocaleDateString()
+    : '&mdash;';
+  const hvacBlock = `<div class="rep-ssl"><h3 class="rep-ssl-title">HVAC Grills</h3>`
+    + `<table><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody>`
+    + `<tr><td>Grills resealed</td><td>${hvacShown}</td></tr>`
+    + `<tr><td>Resealed date</td><td>${hvacDateShown}</td></tr>`
     + `</tbody></table></div>`;
 
   let carSections = '';
@@ -1010,6 +1053,8 @@ document.getElementById('btnReport').addEventListener('click', () => {
 
     ${paramBlock}
 
+    ${hvacBlock}
+
     ${carSections}
 
     <div class="rep-comments">
@@ -1040,6 +1085,8 @@ document.getElementById('btnSaveTrain').addEventListener('click', async () => {
     m1_ssl_sensors: m1Ssl,
     tcar_ssl_sensors: tcarSsl,
     m2_ssl_sensors: m2Ssl,
+    hvac_grills_resealed: hvacResealed,
+    hvac_resealed_date: hvacResealedDate,
     m1_parameters: m1Param,
     m2_parameters: m2Param,
     tcar_parameters: tcarParam,
@@ -1108,6 +1155,8 @@ function applyTrainPayload(payload, sourceLabel){
   m1SslInput.value = m1Ssl; tcarSslInput.value = tcarSsl; m2SslInput.value = m2Ssl;
   m1Param = payload.m1_parameters || ''; m2Param = payload.m2_parameters || ''; tcarParam = payload.tcar_parameters || '';
   m1ParamInput.value = m1Param; m2ParamInput.value = m2Param; tcarParamInput.value = tcarParam;
+  hvacResealed = payload.hvac_grills_resealed || ''; hvacResealedDate = payload.hvac_resealed_date || '';
+  hvacResealedInput.value = hvacResealed; hvacResealedDateInput.value = hvacResealedDate; syncHvacDateState();
   checkSslFlags();
 
   CARS.forEach(car => DOORS.forEach(doorId => updateDoorStatus(car.id, doorId)));
@@ -1166,7 +1215,7 @@ async function b4aFetchUnitIds(){
 async function b4aLoadUnit(unitId){
   const q = new Parse.Query(B4A.className); q.equalTo('train_id', unitId); q.limit(1000);
   const res = await q.find();
-  let comments = '', m1 = '', tc = '', m2 = '', mp1 = '', mp2 = '', tcp = '';
+  let comments = '', m1 = '', tc = '', m2 = '', mp1 = '', mp2 = '', tcp = '', hvr = '', hvd = '';
   res.forEach(o => {
     if (!comments && o.get('comments')) comments = o.get('comments');
     if (!m1 && o.get('m1_ssl_sensors')) m1 = o.get('m1_ssl_sensors');
@@ -1175,10 +1224,13 @@ async function b4aLoadUnit(unitId){
     if (!mp1 && o.get('m1_parameters')) mp1 = o.get('m1_parameters');
     if (!mp2 && o.get('m2_parameters')) mp2 = o.get('m2_parameters');
     if (!tcp && o.get('tcar_parameters')) tcp = o.get('tcar_parameters');
+    if (!hvr && o.get('hvac_grills_resealed')) hvr = o.get('hvac_grills_resealed');
+    if (!hvd && o.get('hvac_resealed_date')) hvd = o.get('hvac_resealed_date');
   });
   const payload = {
     train_id: unitId, comments, m1_ssl_sensors: m1, tcar_ssl_sensors: tc, m2_ssl_sensors: m2,
     m1_parameters: mp1, m2_parameters: mp2, tcar_parameters: tcp,
+    hvac_grills_resealed: hvr, hvac_resealed_date: hvd,
     records: res.map(o => ({ car:o.get('car'), door:o.get('door'), sensor:o.get('sensor'),
       state:o.get('state'), calibration:o.get('calibration'),
       replacement_required:o.get('replacement_required'), replacement_completed:o.get('replacement_completed'), water_signs:o.get('water_signs'),

@@ -766,7 +766,7 @@
 /* GLOBAL VERSION — one number for the whole suite. When anything changes,
    bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
    The hub checks the embedded pages against this and flags any mismatch. */
-const APP_VERSION = "5.7";
+const APP_VERSION = "5.8";
 window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
@@ -1570,7 +1570,8 @@ async function fetchInspections(){
     const res=await q.find();
     res.forEach(o=>out.push({train_id:o.get("train_id"),car:o.get("car"),door:o.get("door"),sensor:o.get("sensor"),
       state:o.get("state"),calibration:o.get("calibration"),replacement_required:o.get("replacement_required"),replacement_completed:o.get("replacement_completed"),
-      water_signs:o.get("water_signs"),m1_ssl_sensors:o.get("m1_ssl_sensors"),tcar_ssl_sensors:o.get("tcar_ssl_sensors"),m2_ssl_sensors:o.get("m2_ssl_sensors"),comments:o.get("comments"),timestamp:o.get("timestamp")}));
+      water_signs:o.get("water_signs"),m1_ssl_sensors:o.get("m1_ssl_sensors"),tcar_ssl_sensors:o.get("tcar_ssl_sensors"),m2_ssl_sensors:o.get("m2_ssl_sensors"),comments:o.get("comments"),timestamp:o.get("timestamp"),
+      hvac_grills_resealed:o.get("hvac_grills_resealed"),hvac_resealed_date:o.get("hvac_resealed_date")}));
     if(res.length<page) break; skip+=page;
   }
   return out;

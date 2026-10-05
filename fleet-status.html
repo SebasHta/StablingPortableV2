@@ -1605,7 +1605,7 @@ const TU_STATUS_FIELDS = {
   reason: ['REASON', 'reason']
 };
 /* GLOBAL VERSION — must match main-hub.html and train_inspection.html. */
-const APP_VERSION = "5.8";
+const APP_VERSION = "6.0";
 window.APP_VERSION = APP_VERSION;
 (function showPanelVersion() {
   const v = document.getElementById('panelVer');
@@ -1688,6 +1688,7 @@ const REPEAT_ACK_CLASS = 'RepeatFaultAck';
 const REPEAT_REARM_AFTER = 10;
 const REPEAT_ACK_REFRESH_MS = 300000; // 5 min
 let repeatAckCache = {}, repeatAckCacheAt = 0;
+let lastRepeatExcluded = 0;
 try { const p = window.parent; if (p && p !== window && p.Parse && p.Parse.User.current()) window.__B4A_USER__ = p.Parse.User.current().getUsername(); } catch (e) {}
 let repeatEscalatedTus = new Set();   // escalated + still quiet
 let repeatPendingTus = new Map();     // tu -> highest occurrence count awaiting escalation
@@ -1698,6 +1699,9 @@ let alarmListBase = [];
 let alarmListVisible = [];
 const autoAckedThisSession = new Set();
 const autoAckAttempts = new Map();      // objectId -> failed attempts
+const serviceMarkedThisSession = new Set();
+const serviceAttempts = new Map();
+let serviceWriteWarned = false;
 let autoAckGaveUpWarned = false;
 /* Writes are the hidden cost: one PUT per alarm, per cycle, forever if they
    keep failing. Cap how many can fire per cycle and stop retrying a record
@@ -2250,6 +2254,35 @@ function alarmEventMs(rec) {
   return isNaN(c) ? 0 : c;
 }
 
+// Stored Service value, if the record already carries one.
+function alarmServiceNo(rec) {
+  const v = rec && (rec.Service !== undefined ? rec.Service : rec.service);
+  return v !== undefined && String(v).trim().toUpperCase() === 'NO';
+}
+
+// Was this alarm raised while its unit was on the stop list? True when the
+// record is already marked, or when the unit is stopped and the alarm is at
+// or after the moment it was stopped.
+function alarmOutOfService(rec, tu, statusByTu) {
+  if (alarmServiceNo(rec)) return true;
+  const st = (statusByTu || lastTuStatusByTu || {})[String(tu).trim()];
+  if (!st || !st.stop) return false;
+  const ms = alarmEventMs(rec);
+  if (!ms) return true;                       // unknown time, unit is stopped
+  return !st.stoppedSince || ms >= st.stoppedSince;
+}
+
+async function updateAlarmService(objectId, value) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey || !objectId) throw new Error('Back4App keys are not configured.');
+  countReq('put');
+  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms/' + objectId, {
+    method: 'PUT', headers: b4aHeaders(), body: JSON.stringify({ Service: value })
+  });
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
+  return true;
+}
+
 function alarmMatchKey(rec, tu) {
   const id = pickField(rec, ['alarmId']) || pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '';
   // Location is part of the identity: the same alarm code on the same unit can
@@ -2302,7 +2335,7 @@ function formatAteneaTimestamp(iso) {
 async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,manual_ack,AteneaTimestamp,ateneaTimestamp';
+  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,manual_ack,Service,AteneaTimestamp,ateneaTimestamp';
   countReq('get');
   const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt&keys=' + encodeURIComponent(keys), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
@@ -2508,7 +2541,11 @@ async function loadFleet() {
     tuStatusByTu[tu] = {
       stop: isStopTrue(rec),
       reason: pickField(rec, TU_STATUS_FIELDS.reason) || '',
-      object_id: rec.objectId
+      object_id: rec.objectId,
+      // When this stop-list entry last changed. Only alarms at or after this
+      // are treated as "raised while stopped", so putting a unit on the stop
+      // list today doesn't retroactively excuse last week's faults.
+      stoppedSince: rec.updatedAt ? (Date.parse(rec.updatedAt) || 0) : 0
     };
   });
   if (tuStatusUnmatched) {
@@ -2572,6 +2609,33 @@ async function loadFleet() {
 
   // Persist each auto-acknowledgement once per record.
   b4aReq.cycles++;
+
+  // Stop-list check: an alarm raised while its unit is stopped is marked
+  // Service = NO, so it can be excluded from repeat-fault counting.
+  let serviceIssued = 0;
+  liveRecords.forEach(rec => {
+    const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
+    if (!tu || !rec.objectId) return;
+    if (alarmServiceNo(rec)) return;                               // already marked
+    if (!alarmOutOfService(rec, tu, tuStatusByTu)) return;
+    const oid = rec.objectId;
+    if (serviceMarkedThisSession.has(oid)) return;
+    if ((serviceAttempts.get(oid) || 0) >= MAX_AUTO_ACK_ATTEMPTS) return;
+    if (serviceIssued >= MAX_AUTO_ACK_PER_CYCLE) return;
+    serviceIssued++;
+    serviceMarkedThisSession.add(oid);
+    rec.Service = 'NO';                                            // reflect it now
+    Promise.resolve(updateAlarmService(oid, 'NO')).catch(() => {
+      serviceMarkedThisSession.delete(oid);
+      const n = (serviceAttempts.get(oid) || 0) + 1;
+      serviceAttempts.set(oid, n);
+      if (n >= MAX_AUTO_ACK_ATTEMPTS && !serviceWriteWarned) {
+        serviceWriteWarned = true;
+        console.warn('Writing Service = NO to Live_Alarms is failing; stop-list alarms will not be marked. Check update permission on Live_Alarms.');
+      }
+    });
+  });
+
   let issued = 0;
   pendingAutoAck.forEach(oid => {
     if (autoAckedThisSession.has(oid)) return;
@@ -3069,10 +3133,13 @@ function closeRepeatDrawer(){
 function computeRepeatFaults(){
   const recs = lastLiveRecords || [];
   const map = {};
+  let excludedStopped = 0;
   recs.forEach(rec => {
     if (isFlagOff(rec)) return; // count fault occurrences (ON), not clears
     const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
     if (!tu) return;
+    // Raised while the unit was on the stop list — not a repeat fault in service.
+    if (alarmOutOfService(rec, tu)) { excludedStopped++; return; }
     const code = pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '(no code)';
     const key = String(tu).trim() + '||' + String(code).trim().toLowerCase();
     let e = map[key];
@@ -3082,6 +3149,7 @@ function computeRepeatFaults(){
     const ms = ateneaSortMs(tsRaw);
     if (ms >= e.lastMs) { e.lastMs = ms; e.lastTs = tsRaw; e.lastMsg = pickField(rec, LIVE_ALARMS_FIELDS.message) || ''; e.location = pickField(rec, LIVE_ALARMS_FIELDS.location) || ''; e.status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)); }
   });
+  lastRepeatExcluded = excludedStopped;
   return Object.values(map);
 }
 function classifyRepeatRows(){
@@ -3115,7 +3183,7 @@ function renderRepeatFaults(){
   const sel = `<label>Min occurrences <select id="repeatMinSel">${[2,3,5,10].map(n => `<option value="${n}"${repeatMinCount === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`
     + ` <button class="btn-manual" id="repeatExportBtn" type="button"${rows.length ? '' : ' disabled'}>Export CSV</button>`;
   let html = `<div class="alarm-table-head">
-    <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)</span></div>
+    <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)${lastRepeatExcluded ? ' \u00b7 ' + lastRepeatExcluded + ' excluded (unit on stop list)' : ''}</span></div>
     <div class="alarm-table-actions">${sel}</div>
   </div>`;
   if (!rows.length) {

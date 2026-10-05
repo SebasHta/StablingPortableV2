@@ -298,7 +298,9 @@
   .msg.bad{background:rgba(232,85,78,.1);color:#f0a8a4;border:1px solid rgba(232,85,78,.3)}
   .msg.info{background:rgba(57,197,214,.08);color:#a9e6ee;border:1px solid rgba(57,197,214,.25)}
   .drawer .foot{padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:10px}
-  .btn.primary{background:var(--green);color:#06140c;border-color:transparent;flex:1;justify-content:center}
+  .btn.primary{background:var(--green);color:#06140c;border-color:transparent;justify-content:center}
+  /* Buttons that genuinely fill their row (login, modal footers). */
+  .login .btn.primary,.modal-foot .btn.primary,.drawer .btn.primary{flex:1}
   .btn.primary:hover{background:#43d986}
   .hint{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);line-height:1.5;margin-top:7px}
 
@@ -432,7 +434,18 @@
   .stop-form label{font-family:var(--cond);text-transform:uppercase;letter-spacing:.06em;font-size:12px;color:var(--ink-dim)}
   .stop-form select,.stop-form input:not([type="checkbox"]){background:#0c131a;border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:var(--mono);font-size:14px;padding:10px 12px;outline:none;min-width:220px}
   .stop-form select:focus,.stop-form input:not([type="checkbox"]):focus{border-color:var(--rail-lit)}
-  .stop-actions{display:flex;gap:10px;flex-wrap:wrap}
+  .stop-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  /* Stop List: one centred column so the form, upload row, messages and
+     table all share an axis instead of hugging the left edge. */
+  #stoplistView .reports-body{display:flex;flex-direction:column;align-items:center;gap:4px}
+  #stoplistView .stop-form{width:100%;max-width:820px;justify-content:center}
+  #stoplistView .stop-upload-row{width:100%;max-width:820px;flex-direction:column;align-items:center;gap:8px;text-align:center}
+  #stoplistView #stopUpload,#stoplistView #stopStatus,#stoplistView #stopContent{width:100%;display:flex;flex-direction:column;align-items:center}
+  #stoplistView .rep-summary-head{text-align:center;width:100%}
+  #stoplistView .rep-tablewrap{width:100%;max-width:640px}
+  #stoplistView .rep-table th,#stoplistView .rep-table td{text-align:center}
+  #stoplistView .rep-table th:first-child,#stoplistView .rep-table td:first-child{text-align:left}
+  #stoplistView .rep-empty{text-align:center}
   .tile.locked{filter:grayscale(.55)}
   .b4a-card{background:linear-gradient(180deg,var(--panel),#10171e);border:1px solid var(--line);border-radius:12px;padding:16px 18px;max-width:900px}
   .b4a-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -629,9 +642,9 @@
       <div class="field"><label for="stopReason">Reason</label><input id="stopReason" type="text" placeholder="Reason…" autocomplete="off"></div>
       <div class="stop-actions"><button class="btn primary" id="stopAdd">Add to Stop List</button><button class="btn" id="stopRemove">Remove from Stop List</button></div>
     </div>
-    <div class="stop-actions" style="margin-top:14px">
+    <div class="stop-actions stop-upload-row" style="margin-top:16px">
       <label class="btn" style="cursor:pointer">Upload availability report<input type="file" id="stopFile" accept=".pdf,.xlsx,.xls,.csv" style="display:none"></label>
-      <span class="sub" style="align-self:center">Syncs the Stop List from the report’s table (Unit Number · Stopped Reason Level 2)</span>
+      <span class="sub">Syncs the Stop List from the report’s table (Unit Number · Stopped Reason Level 2)</span>
     </div>
     <div id="stopUpload" style="margin:12px 0"></div>
     <div id="stopStatus" style="margin:12px 0"></div>
@@ -766,7 +779,7 @@
 /* GLOBAL VERSION — one number for the whole suite. When anything changes,
    bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
    The hub checks the embedded pages against this and flags any mismatch. */
-const APP_VERSION = "5.8";
+const APP_VERSION = "6.0";
 window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
@@ -1521,7 +1534,7 @@ function stopRenderPreview(pairs, filename){
   const trs=pairs.map(p=>'<tr><td>'+escapeHtml(p.tu)+'</td><td>'+escapeHtml(p.reason)+'</td></tr>').join('');
   el.innerHTML='<div class="rep-summary-head">From '+escapeHtml(filename)+' \u00b7 '+pairs.length+' unit(s) to stop</div>'+
     '<div class="rep-tablewrap" style="max-width:640px"><table class="rep-table"><thead><tr><th>Unit</th><th>Reason (Stopped Reason Level 2)</th></tr></thead><tbody>'+trs+'</tbody></table></div>'+
-    '<div class="rep-empty" style="padding:8px 0">Applying will set these units STOP=true and <b>un-stop any currently-stopped unit not in this list</b>.</div>'+
+    '<div class="rep-empty" style="padding:8px 0;text-align:center;max-width:640px">Applying will set these units STOP=true and <b>un-stop any currently-stopped unit not in this list</b>.</div>'+
     '<div class="stop-actions"><button class="btn primary" id="stopApplyFile">Apply to stop list</button><button class="btn" id="stopCancelFile">Cancel</button></div>';
   $("stopApplyFile").onclick=stopApplyFile;
   $("stopCancelFile").onclick=()=>{ stopPendingPairs=null; el.innerHTML=''; stopSetStatus('',''); };

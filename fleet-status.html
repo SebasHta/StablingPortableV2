@@ -797,6 +797,25 @@
   }
 
   .ticker-body .empty{ color:var(--ink-dim); font-style:italic; }
+  .ticker-body .pos{ margin-left:6px; color:var(--ink-muted); font-weight:500; }
+  .ticker-body .pos.untracked{ color:var(--warn); }
+  .untracked-panel{ margin-top:12px; }
+  .poll-status{ margin:0 0 12px; padding:7px 12px; border-radius:8px; font-size:12px; color:var(--ink-muted);
+    border:1px solid var(--panel-border); background:var(--panel); }
+  .poll-status.ok{ border-color:rgba(31,165,80,.45); }
+  .poll-status.warn{ border-color:var(--warn); color:var(--warn-light); }
+  .poll-status.bad{ border-color:var(--crit); color:var(--crit-light); }
+  .poll-status b{ color:var(--ink); }
+  .poll-status button{ margin-left:10px; font-size:11px; padding:2px 8px; border-radius:5px; cursor:pointer;
+    background:var(--bg); color:var(--ink); border:1px solid var(--panel-border); }
+  .ut-diag{ margin-top:8px; font-size:11px; color:var(--ink-dim); }
+  .untracked-panel .ticker-body{ display:flex; flex-wrap:wrap; gap:6px; }
+  .untracked-chip.stopped{ background:rgba(107,118,134,.18); border-color:var(--oos); color:var(--oos-light); }
+  .stop-tag{ margin-left:6px; padding:0 5px; border-radius:4px; font-size:9.5px; letter-spacing:.06em;
+    background:var(--oos); color:var(--oos-ink); vertical-align:1px; }
+  .untracked-stop-count{ color:var(--ink-dim); font-weight:500; text-transform:none; letter-spacing:0; }
+  .untracked-chip{ font-weight:700; font-size:13px; padding:3px 9px; border-radius:6px;
+    background:rgba(232,163,23,.12); border:1px solid rgba(232,163,23,.45); color:var(--warn-light); }
 
   .alert-item{ white-space:nowrap; }
   .alert-item .tu{ font-weight:700; }
@@ -986,6 +1005,7 @@
 
     <div id="loadError" style="display:none" class="load-error"></div>
     <div id="liveWarning" style="display:none" class="load-error warn"></div>
+    <div id="pollStatus" class="poll-status">Waiting for first refresh…</div>
 
     <div class="tabs" role="tablist" aria-label="Panel view">
       <button class="tab-btn" id="tabBtnTiles" type="button" role="tab" aria-selected="true" aria-controls="tabPanelTiles">▦ Tiles</button>
@@ -998,6 +1018,12 @@
       <div class="ticker-panel">
         <div class="ticker-head">Active alerts · <span class="n" id="alertCount">0</span> of <span class="n" id="unitCount">0</span></div>
         <div class="ticker-body" id="ticker"></div>
+      </div>
+
+      <div class="ticker-panel untracked-panel">
+        <div class="ticker-head">Units not tracked · <span class="n" id="untrackedCount">0</span> <span class="untracked-stop-count" id="untrackedStopCount"></span></div>
+        <div class="ticker-body" id="untracked"></div>
+        <div class="ut-diag" id="utDiag"></div>
       </div>
 
       <div class="kpi-bottom" id="kpiBottom"></div>
@@ -1604,12 +1630,20 @@ const TU_STATUS_FIELDS = {
   stop: ['STOP', 'stop'],
   reason: ['REASON', 'reason']
 };
-/* GLOBAL VERSION — must match main-hub.html and train_inspection.html. */
-const APP_VERSION = "6.0";
+/* GLOBAL VERSION — must match main-hub.html, train_inspection.html,
+   alarm-trends.html and version.json.
+   Includes the UT_Location features promoted from test build 6.2b-r12.
+   IS_TEST_BUILD = true only for a parallel test copy: it disables the
+   self-update reload and shows an orange TEST badge. */
+const IS_TEST_BUILD = false;
+const APP_VERSION = "6.8";
 window.APP_VERSION = APP_VERSION;
 (function showPanelVersion() {
   const v = document.getElementById('panelVer');
-  if (v) v.textContent = 'v' + APP_VERSION;
+  if (v) {
+    v.textContent = 'v' + APP_VERSION + (IS_TEST_BUILD ? ' \u00b7 TEST' : '');
+    if (IS_TEST_BUILD) { v.style.background = '#b45309'; v.style.color = '#fff'; v.style.borderColor = '#f59e0b'; }
+  }
   else document.addEventListener('DOMContentLoaded', showPanelVersion, { once: true });
 })();
 console.info('AOR Fleet Status Panel v' + APP_VERSION);
@@ -1638,6 +1672,7 @@ function reloadToLatest(v){
 }
 
 function onUpdateAvailable(v){
+  if (IS_TEST_BUILD) { console.info('[update] server is v' + v + '; test build ' + APP_VERSION + ' does not reload.'); return; }
   // Unattended display: no one is here to click anything, so reload itself.
   console.warn('[update] server has v' + v + ', this panel is v' + APP_VERSION + ' — reloading');
   reloadToLatest(v);
@@ -1678,22 +1713,51 @@ const STATUS_DOT_CLASS = { failure: 'crit', review: 'warn', maintenance: 'maint'
 let liveRefreshTimer = null;
 let lastUnitsByTu = {};
 let lastLiveRecords = [];
+let hadLiveData = false;
 let tuStatusCache = null, tuStatusCacheAt = 0;
 /* Repeat-fault escalation. The second acknowledgement belongs to the PATTERN
    (unit + fault code), not to any one alarm record, so it lives in its own
    class — one row per TU+code, one write per escalation. A row re-arms once
    the fault has occurred REPEAT_REARM_AFTER more times than when it was
    escalated. */
+/* ── UT_Location (TEST) ───────────────────────────────────────────────────
+ * When a NEW alarm arrives, the unit's position from UT_Location is stored on
+ * it in a separate `position` column. `location` is never modified:
+ *   - it is part of the ON/OFF match key, so changing it on the ON (but not
+ *     the OFF) stops the pair from matching and the alarm never clears;
+ *   - production screens read the same records and don't know about position.
+ * The screen shows `location`, falling back to `position` when Atenea sent none.
+ * ---------------------------------------------------------------------- */
+const UT_LOCATION_CLASS_CANDIDATES = ['UT_Location'];   // confirmed class name
+// Confirmed schema: UT_Location.VehId (same value as Live_Alarms.tu) and UT_Location.Position.
+const UT_LOCATION_FIELDS = { tu: ['VehId'], position: ['Position'] };
+// Unit codes may arrive as AMP103 (tracker style) or with spaces; the roster uses AM103.
+function normUnit(v) { return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/^AMP(?=\d)/, 'AM'); }
+let utLocationDiag = '';   // shown in the Units not tracked box
+// Re-read on every 60s alarm poll so a new alarm is stamped with a position at
+// most ~1 min old (matters for DEPOT auto-acknowledge). Set just under
+// LIVE_REFRESH_MS: exactly 60000 could miss by a few ms and wait 2 minutes.
+const UT_LOCATION_REFRESH_MS = 55000;       // ~1 min (was 5 min)
+// Alarms already in Live_Alarms when this page first loads are the baseline and are
+// never touched. Only alarms that appear AFTER the page opened get a Position.
+// Comparing objectIds (not timestamps) avoids any PC-clock vs server-clock drift.
+let alarmBaseline = null;
+let utLocationCache = {}, utLocationCacheAt = 0, utLocationClass = null;
+let utLocationWarned = false;
+const positionMarkedThisSession = new Set();
+const positionAttempts = new Map();
+let positionWriteWarned = false;
+
 const REPEAT_ACK_CLASS = 'RepeatFaultAck';
 const REPEAT_REARM_AFTER = 10;
 const REPEAT_ACK_REFRESH_MS = 300000; // 5 min
 let repeatAckCache = {}, repeatAckCacheAt = 0;
-let lastRepeatExcluded = 0;
+let lastRepeatExcluded = 0, lastRepeatExcludedDepot = 0;
 try { const p = window.parent; if (p && p !== window && p.Parse && p.Parse.User.current()) window.__B4A_USER__ = p.Parse.User.current().getUsername(); } catch (e) {}
 let repeatEscalatedTus = new Set();   // escalated + still quiet
 let repeatPendingTus = new Map();     // tu -> highest occurrence count awaiting escalation
 let repeatMinCount = 3;
-let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', ts:'', ack:'' };
+let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', pos:'', ts:'', ack:'' };
 let alarmSort = { col: null, dir: 'asc' };
 let alarmListBase = [];
 let alarmListVisible = [];
@@ -2335,11 +2399,17 @@ function formatAteneaTimestamp(iso) {
 async function fetchLiveAlarms() {
   const { appId, jsKey } = BACK4APP_CONFIG;
   if (!appId || !jsKey) return null; // not configured — fully disabled
-  const keys = 'tu,severity,location,description,alarmId,message,flag,acknowledged,manual_ack,Service,AteneaTimestamp,ateneaTimestamp';
+  const keys = 'tu,severity,location,Position,description,alarmId,message,flag,acknowledged,manual_ack,ack_reason,Service,AteneaTimestamp,ateneaTimestamp';
   countReq('get');
   const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms?limit=1000&order=-createdAt&keys=' + encodeURIComponent(keys), {
     headers: { 'X-Parse-Application-Id': appId, 'X-Parse-JavaScript-Key': jsKey }
   });
+  // Conditional caching is left ON deliberately: this response is ~380 KB, and
+  // the 304s it produces are what keep a screen from pulling ~560 MB a day.
+  // The browser normally turns a 304 into a cached 200; if one is ever surfaced
+  // here, res.ok is false, so treat it explicitly as "unchanged" rather than
+  // letting it throw and drop the screen to demo data.
+  if (res.status === 304) return null;
   if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
   const body = await res.json();
   return body.results || [];
@@ -2374,6 +2444,162 @@ function b4aHeaders() {
   };
 }
 function repeatKey(tu, code) { return String(tu).trim().toUpperCase() + '||' + String(code).trim().toLowerCase(); }
+
+async function fetchClassRows(className) {
+  countReq('get');
+  const res = await fetch('https://parseapi.back4app.com/classes/' + className + '?limit=1000', { headers: b4aHeaders() });
+  if (res.status === 304) return null;
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status + ' (' + className + ')');
+  const body = await res.json();
+  return body.results || [];
+}
+function buildPositionMap(rows) {
+  const map = {};
+  (rows || []).forEach(r => {
+    const tu = pickField(r, UT_LOCATION_FIELDS.tu);
+    const pos = pickField(r, UT_LOCATION_FIELDS.position);
+    if (tu && pos !== undefined && String(pos).trim() !== '') map[normUnit(tu)] = String(pos).trim();
+  });
+  return map;
+}
+async function fetchUtLocations(force) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey) return utLocationCache;
+  if (!force && utLocationCacheAt && (Date.now() - utLocationCacheAt) < UT_LOCATION_REFRESH_MS) return utLocationCache;
+  if (utLocationClass) {
+    const rows = await fetchClassRows(utLocationClass);
+    if (rows !== null) utLocationCache = buildPositionMap(rows);
+    utLocationCacheAt = Date.now();
+    return utLocationCache;
+  }
+  // Not resolved yet. Parse answers an unknown class with an empty list rather
+  // than an error, so "empty" is treated as "try the next name", and a name is
+  // only adopted once it actually returns usable rows.
+  let lastErr = null;
+  for (const name of UT_LOCATION_CLASS_CANDIDATES) {
+    try {
+      const rows = await fetchClassRows(name);
+      const map = buildPositionMap(rows);
+      if (rows && rows.length && !Object.keys(map).length) {
+        // Rows exist but no TU/position columns matched — show what IS there.
+        const seen = Object.keys(rows[0]).filter(k => !['objectId','createdAt','updatedAt','ACL'].includes(k));
+        utLocationDiag = name + ': ' + rows.length + ' rows, but no unit/position columns matched. Columns found: ' + seen.join(', ');
+      } else if (!rows || !rows.length) {
+        utLocationDiag = name + ': no rows returned (empty class, or the JavaScript key lacks Find permission).';
+      }
+      if (Object.keys(map).length) {
+        utLocationDiag = name + ': ' + Object.keys(map).length + ' units loaded.';
+        utLocationClass = name; utLocationCache = map; utLocationCacheAt = Date.now();
+        console.info('[UT_Location] using class "' + name + '" (' + Object.keys(map).length + ' units).');
+        return map;
+      }
+    } catch (e) { lastErr = e; utLocationDiag = name + ': ' + e.message; }
+  }
+  utLocationCacheAt = Date.now();   // don't hammer while unresolved; retry next window
+  if (!utLocationWarned) {
+    utLocationWarned = true;
+    console.warn('[UT_Location] no usable rows in ' + UT_LOCATION_CLASS_CANDIDATES.join(' or ') +
+      ' (looked for TU in ' + UT_LOCATION_FIELDS.tu.join('/') + ', position in ' + UT_LOCATION_FIELDS.position.join('/') + ').' +
+      (lastErr ? ' Last error: ' + lastErr.message : ''));
+  }
+  return utLocationCache;
+}
+// UT_Location reports a unit it can't see as position "NO DATA". That is a
+// tracking status, not a place, so it is never stamped on an alarm or shown as
+// a location — those units are listed in the "Units not tracked" box instead.
+const NO_DATA_VALUE = 'NO DATA';
+function isNoData(pos) { return String(pos || '').trim().toUpperCase() === NO_DATA_VALUE; }
+// A fault raised while the unit is in the depot is acknowledged on arrival and
+// is not a repeat fault. Exact match on the Position value DEPOT (any case).
+const DEPOT_VALUE = 'DEPOT';
+function isDepot(pos) { return String(pos || '').trim().toUpperCase() === DEPOT_VALUE; }
+function rawUnitPosition(tu) { return utLocationCache[normUnit(tu)] || ''; }
+function unitPosition(tu) { const p = rawUnitPosition(tu); return isNoData(p) ? '' : p; }
+function untrackedUnits() {
+  const num = t => { const m = String(t).match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
+  return Object.keys(utLocationCache).filter(tu => isNoData(utLocationCache[tu]))
+    .sort((a, b) => num(a) - num(b) || a.localeCompare(b));
+}
+
+
+async function updateAlarmPosition(objectId, position, extra) {
+  const { appId, jsKey } = BACK4APP_CONFIG;
+  if (!appId || !jsKey || !objectId) throw new Error('Back4App keys are not configured.');
+  countReq('put');
+  const res = await fetch('https://parseapi.back4app.com/classes/Live_Alarms/' + objectId, {
+    method: 'PUT', headers: b4aHeaders(), body: JSON.stringify(Object.assign({ Position: position }, extra || {}))
+  });
+  if (!res.ok) throw new Error('Back4App HTTP ' + res.status);
+  return true;
+}
+
+// Stamp NEW ON alarms with the unit's current position. Runs before the
+// alarms are turned into tiles/rows, so they show it on this same refresh.
+/* ── Refresh status (TEST) ── shows whether this page is actually refreshing. */
+let pollStatus = null, pollStatusTimer = null;
+function notePoll(records, stale, err) {
+  let newest = 0;
+  (records || []).forEach(r => { const t = r && r.createdAt ? Date.parse(r.createdAt) : 0; if (t > newest) newest = t; });
+  pollStatus = { at: Date.now(), ok: !!records && !stale && !err, count: (records || []).length, newest, stale, err };
+  renderPollStatus();
+  if (!pollStatusTimer) pollStatusTimer = setInterval(renderPollStatus, 5000);
+}
+function renderPollStatus() {
+  const el = document.getElementById('pollStatus'); if (!el || !pollStatus) return;
+  const ago = Math.round((Date.now() - pollStatus.at) / 1000);
+  const t = ms => ms ? new Date(ms).toLocaleTimeString() : '\u2014';
+  const state = pollStatus.err ? 'FETCH FAILED: ' + pollStatus.err
+              : pollStatus.stale ? 'no change from server'
+              : 'OK';
+  const cls = pollStatus.err ? 'bad' : (ago > (LIVE_REFRESH_MS / 1000) * 2 ? 'warn' : 'ok');
+  el.className = 'poll-status ' + cls;
+  el.innerHTML = 'Last refresh <b>' + t(pollStatus.at) + '</b> (' + ago + 's ago) \u00b7 ' + pollStatus.count +
+    ' alarms loaded \u00b7 newest alarm created <b>' + t(pollStatus.newest) + '</b> \u00b7 ' + escapeHtml(state) +
+    ' <button type="button" id="pollNowBtn">Refresh now</button>';
+  const b = document.getElementById('pollNowBtn');
+  if (b) b.onclick = () => { b.disabled = true; b.textContent = 'Refreshing\u2026'; loadFleet(); };
+}
+
+function enrichPositions(records) {
+  if (!alarmBaseline) {                          // first load: remember what was already there
+    alarmBaseline = new Set((records || []).map(r => r && r.objectId).filter(Boolean));
+    console.info('[Position] baseline: ' + alarmBaseline.size + ' existing alarm(s) will not be stamped.');
+    return;
+  }
+  let issued = 0;
+  (records || []).forEach(rec => {
+    if (!rec || !rec.objectId || isFlagOff(rec)) return;
+    if (pickField(rec, ['Position'])) return;                         // already stamped
+    if (alarmBaseline.has(rec.objectId)) return;                      // existed before the page opened
+    const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
+    const pos = tu ? unitPosition(tu) : '';
+    if (!pos) return;
+    const oid = rec.objectId;
+    if (positionMarkedThisSession.has(oid)) return;
+    if ((positionAttempts.get(oid) || 0) >= MAX_AUTO_ACK_ATTEMPTS) return;
+    if (issued >= MAX_AUTO_ACK_PER_CYCLE) return;
+    issued++;
+    positionMarkedThisSession.add(oid);
+    rec.Position = pos;
+    // Arrived while the unit is in the depot: acknowledge it automatically.
+    // ack_reason marks it as this rule's doing (manual_ack is left untouched),
+    // so these can be found and reversed if needed.
+    let extra = null;
+    if (isDepot(pos) && !isAcknowledgedTrue(rec)) {
+      extra = { acknowledged: true, ack_reason: 'DEPOT' };
+      rec.acknowledged = true; rec.ack_reason = 'DEPOT';
+    }
+    Promise.resolve(updateAlarmPosition(oid, pos, extra)).catch(() => {
+      positionMarkedThisSession.delete(oid);
+      const n = (positionAttempts.get(oid) || 0) + 1;
+      positionAttempts.set(oid, n);
+      if (n >= MAX_AUTO_ACK_ATTEMPTS && !positionWriteWarned) {
+        positionWriteWarned = true;
+        console.warn('Writing position to Live_Alarms is failing. Check update permission on Live_Alarms.');
+      }
+    });
+  });
+}
 
 async function fetchRepeatAcks(force) {
   const { appId, jsKey } = BACK4APP_CONFIG;
@@ -2468,6 +2694,7 @@ async function setTuStatusStop(tu, stop, reason, existingObjectId) {
   const payload = { STOP: stop, REASON: reason || '' };
 
   let res;
+  countReq(existingObjectId ? 'put' : 'post');
   if (existingObjectId) {
     res = await fetch(`https://parseapi.back4app.com/classes/TU_Status/${existingObjectId}`, {
       method: 'PUT',
@@ -2486,6 +2713,11 @@ async function setTuStatusStop(tu, stop, reason, existingObjectId) {
     throw new Error(`Back4App HTTP ${res.status} (${existingObjectId ? 'update' : 'create'})${bodyText ? ' — ' + bodyText : ''}`);
   }
   const body = await res.json().catch(() => ({}));
+  // TU_Status is normally cached for TU_STATUS_REFRESH_MS. This page has just
+  // changed it, so drop the cache: the refresh that follows must re-read it,
+  // or the tile keeps its old status for up to 10 minutes.
+  tuStatusCache = null;
+  tuStatusCacheAt = 0;
   return { persisted: true, object_id: existingObjectId || body.objectId };
 }
 
@@ -2507,14 +2739,29 @@ async function loadFleet() {
     }
   }
 
-  let liveRecords = null;
+  // A single failed poll must NOT drop the screen to demo data. Retry once,
+  // and if that fails too, carry on with the last live records we held and say
+  // so. Demo data is only ever shown when live data has never loaded at all.
+  let liveRecords = null, liveStale = false, pollErr = '';
   try {
     liveRecords = await fetchLiveAlarms();
   } catch (err) {
-    console.warn('Back4App fetch failed, falling back to roster data:', err);
+    console.warn('Back4App Live_Alarms fetch failed, retrying once:', err);
+    try {
+      liveRecords = await fetchLiveAlarms();
+    } catch (err2) {
+      console.warn('Back4App Live_Alarms fetch failed again:', err2);
+      pollErr = (err2 && err2.message) || String(err2);
+      if (hadLiveData) { liveRecords = lastLiveRecords; liveStale = true; }
+    }
   }
-  lastLiveRecords = liveRecords || [];
+  if (liveRecords === null && hadLiveData) { liveRecords = lastLiveRecords; liveStale = true; } // 304 / unchanged
+  if (liveRecords && !liveStale) { hadLiveData = true; lastLiveRecords = liveRecords; }
+  else if (!liveRecords) { lastLiveRecords = []; }
+  notePoll(liveRecords, liveStale, pollErr);
   try { await fetchRepeatAcks(false); } catch (err) { console.warn('RepeatFaultAck fetch failed:', err); }
+  try { await fetchUtLocations(false); } catch (err) { console.warn('UT_Location fetch failed:', err); }
+  if (liveRecords) { try { enrichPositions(liveRecords); } catch (err) { console.warn('Position stamping failed (refresh continues):', err); } }
 
   // TU_Status (Out of Service) is fetched independently of Live_Alarms and
   // applied the same way regardless of which branch below ends up running
@@ -2601,6 +2848,8 @@ async function loadFleet() {
       acknowledged: storedAck || autoAck,
       manual_ack: rec.manual_ack === true,
       location: pickField(rec, LIVE_ALARMS_FIELDS.location) || '',
+      position: pickField(rec, ['Position']) || '',
+      ack_reason: pickField(rec, ['ack_reason']) || '',
       atenea_timestamp: normalizeAteneaTimestamp(pickField(rec, LIVE_ALARMS_FIELDS.atenea_timestamp))
     };
     if (!byTu[tu]) byTu[tu] = [];
@@ -2765,6 +3014,9 @@ async function loadFleet() {
     );
   }
 
+  if (liveStale) {
+    showLiveWarning('Back4App could not be reached on the last refresh \u2014 showing the most recent live data. Retrying automatically.');
+  }
   render({ units: mergedUnits, _meta: { generated: new Date().toISOString() } });
 
   if (!liveRefreshTimer) startLiveRefresh();
@@ -2924,9 +3176,37 @@ function render(json) {
   } else {
     ticker.innerHTML = alerts.map((u, i) => {
       const sep = i < alerts.length - 1 ? '<span class="sep">·</span>' : '';
-      return `<span class="alert-item ${escapeAttr(u.status)}"><span class="tu">${escapeHtml(u.tu)}</span> — ${escapeHtml(u.alert_code || '')}</span>${sep}`;
+      // Current position from UT_Location (where to find the train now),
+      // falling back to the position stamped on the alarm when it arrived.
+      // Position saved on the alarm shown here (Live_Alarms.Position, recorded
+      // when the fault occurred). Never the unit's live position, so it doesn't
+      // change as the train moves. Blank for alarms that were never stamped.
+      const shown = (u.alarms || []).find(a => a.object_id && a.object_id === u.object_id);
+      const pos = (shown && shown.position) || '';
+      const posHtml = pos ? `<span class="pos" title="Position when the fault occurred">\u00b7 ${escapeHtml(pos)}</span>` : '';
+      return `<span class="alert-item ${escapeAttr(u.status)}"><span class="tu">${escapeHtml(u.tu)}</span> — ${escapeHtml(u.alert_code || '')}${posHtml}</span>${sep}`;
     }).join('');
   }
+
+  const untracked = untrackedUnits();
+  // Units on the stop list (TU_Status STOP = true) are out of service on purpose,
+  // so not being tracked is expected — marked so they stand apart from the rest.
+  const stoppedTus = {};
+  Object.keys(lastTuStatusByTu || {}).forEach(t => { const st = lastTuStatusByTu[t]; if (st && st.stop) stoppedTus[normUnit(t)] = st; });
+  const onStop = untracked.filter(tu => stoppedTus[normUnit(tu)]).length;
+  document.getElementById('untrackedCount').textContent = untracked.length;
+  const stopCountEl = document.getElementById('untrackedStopCount');
+  if (stopCountEl) stopCountEl.textContent = onStop ? '(' + onStop + ' on stop list)' : '';
+  document.getElementById('untracked').innerHTML = untracked.length
+    ? untracked.map(tu => {
+        const st = stoppedTus[normUnit(tu)];
+        if (!st) return `<span class="untracked-chip" title="UT_Location position: NO DATA">${escapeHtml(tu)}</span>`;
+        const tip = 'UT_Location position: NO DATA \u2014 unit is on the stop list' + (st.reason ? ': ' + st.reason : '');
+        return `<span class="untracked-chip stopped" title="${escapeAttr(tip)}">${escapeHtml(tu)}<span class="stop-tag">STOP</span></span>`;
+      }).join('')
+    : '<span class="empty">' + (Object.keys(utLocationCache).length ? 'All units are reporting a position.' : 'No UT_Location data loaded.') + '</span>';
+  const diagEl = document.getElementById('utDiag');
+  if (diagEl) diagEl.textContent = utLocationDiag;
 
   const footer = document.getElementById('footer');
   footer.textContent = isDemo ? '' : `Fleet data as of ${new Date().toLocaleString()}.`;
@@ -3015,6 +3295,7 @@ function sortAlarms(rows){
     code:(a,b)=> String(a.alert_code||'').localeCompare(String(b.alert_code||'')),
     msg: (a,b)=> String(a.alert_message||'').localeCompare(String(b.alert_message||'')),
     loc: (a,b)=> String(a.location||'').localeCompare(String(b.location||'')),
+    pos: (a,b)=> String(a.position||'').localeCompare(String(b.position||'')),
     ts:  (a,b)=> ateneaSortMs(a.atenea_timestamp)-ateneaSortMs(b.atenea_timestamp),
     ack: (a,b)=> Number(a.acknowledged)-Number(b.acknowledged)
   }[col];
@@ -3037,6 +3318,7 @@ function applyAlarmColFilters(rows){
     if (f.code && !inc(r.alert_code, f.code)) return false;
     if (f.msg && !inc(r.alert_message, f.msg)) return false;
     if (f.loc && !inc(r.location, f.loc)) return false;
+    if (f.pos && !inc(r.position, f.pos)) return false;
     if (f.ts && !inc(formatAteneaTimestamp(r.atenea_timestamp), f.ts)) return false;
     if (f.ack === 'yes' && !r.acknowledged) return false;
     if (f.ack === 'no' && r.acknowledged) return false;
@@ -3051,6 +3333,7 @@ function alarmRowHtml(r){
           <td>${escapeHtml(r.alert_code || '')}</td>
           <td class="al-msg">${escapeHtml(r.alert_message || '')}</td>
           <td>${escapeHtml(r.location || '')}</td>
+          <td>${escapeHtml(r.position || '')}</td>
           <td class="al-ts" style="white-space:nowrap;color:var(--ink-dim)">${escapeHtml(formatAteneaTimestamp(r.atenea_timestamp))}</td>
           <td><span class="al-ack ${r.acknowledged ? 'yes' : 'no'}">${r.acknowledged ? 'Yes' : 'No'}</span></td>
         </tr>`;
@@ -3114,7 +3397,7 @@ function renderAlarmTbody(){
   const tbody = wrap.querySelector('table.alarm-table tbody'); if (!tbody) return;
   const visible = sortAlarms(applyAlarmColFilters(alarmListBase || [])); alarmListVisible = visible;
   tbody.innerHTML = visible.length ? visible.map(alarmRowHtml).join('')
-    : `<tr class="al-empty-row"><td colspan="7">No alarms match these filters.</td></tr>`;
+    : `<tr class="al-empty-row"><td colspan="8">No alarms match these filters.</td></tr>`;
   wireAlarmRows(wrap);
   const shown = document.getElementById('alShownCount'); if (shown) shown.textContent = visible.length;
   const eb = document.getElementById('alarmListExportBtn'); if (eb) eb.disabled = !visible.length;
@@ -3133,13 +3416,15 @@ function closeRepeatDrawer(){
 function computeRepeatFaults(){
   const recs = lastLiveRecords || [];
   const map = {};
-  let excludedStopped = 0;
+  let excludedStopped = 0, excludedDepot = 0;
   recs.forEach(rec => {
     if (isFlagOff(rec)) return; // count fault occurrences (ON), not clears
     const tu = pickField(rec, LIVE_ALARMS_FIELDS.tu);
     if (!tu) return;
     // Raised while the unit was on the stop list — not a repeat fault in service.
     if (alarmOutOfService(rec, tu)) { excludedStopped++; return; }
+    // Raised while the unit was in the depot — not a repeat fault in service.
+    if (isDepot(pickField(rec, ['Position']))) { excludedDepot++; return; }
     const code = pickField(rec, LIVE_ALARMS_FIELDS.code) || pickField(rec, LIVE_ALARMS_FIELDS.severity) || '(no code)';
     const key = String(tu).trim() + '||' + String(code).trim().toLowerCase();
     let e = map[key];
@@ -3150,6 +3435,7 @@ function computeRepeatFaults(){
     if (ms >= e.lastMs) { e.lastMs = ms; e.lastTs = tsRaw; e.lastMsg = pickField(rec, LIVE_ALARMS_FIELDS.message) || ''; e.location = pickField(rec, LIVE_ALARMS_FIELDS.location) || ''; e.status = classifySeverity(pickField(rec, LIVE_ALARMS_FIELDS.severity)); }
   });
   lastRepeatExcluded = excludedStopped;
+  lastRepeatExcludedDepot = excludedDepot;
   return Object.values(map);
 }
 function classifyRepeatRows(){
@@ -3183,7 +3469,7 @@ function renderRepeatFaults(){
   const sel = `<label>Min occurrences <select id="repeatMinSel">${[2,3,5,10].map(n => `<option value="${n}"${repeatMinCount === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>`
     + ` <button class="btn-manual" id="repeatExportBtn" type="button"${rows.length ? '' : ' disabled'}>Export CSV</button>`;
   let html = `<div class="alarm-table-head">
-    <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)${lastRepeatExcluded ? ' \u00b7 ' + lastRepeatExcluded + ' excluded (unit on stop list)' : ''}</span></div>
+    <div class="alarm-table-summary"><strong>${rows.length}</strong> unit/fault combination(s) with \u2265 ${repeatMinCount} occurrences <span style="color:var(--ink-dim)">\u00b7 within the latest ${(lastLiveRecords || []).length} record(s)${lastRepeatExcluded ? ' \u00b7 ' + lastRepeatExcluded + ' excluded (unit on stop list)' : ''}${lastRepeatExcludedDepot ? ' \u00b7 ' + lastRepeatExcludedDepot + ' excluded (in depot)' : ''}</span></div>
     <div class="alarm-table-actions">${sel}</div>
   </div>`;
   if (!rows.length) {
@@ -3297,6 +3583,8 @@ function renderAlarmList(units) {
       alert_code: pickField(base, LIVE_ALARMS_FIELDS.code) || pickField(base, LIVE_ALARMS_FIELDS.severity) || 'Active alarm',
       alert_message: pickField(base, LIVE_ALARMS_FIELDS.message) || '',
       location: pickField(base, LIVE_ALARMS_FIELDS.location) || '',
+      // Stamped when the alarm arrived; older alarms fall back to where the unit is now.
+      position: pickField(base, ['Position']) || '',
       acknowledged: cleared || (g.onRec ? isAcknowledgedTrue(g.onRec) : true),
       atenea_timestamp: normalizeAteneaTimestamp(pickField(base, LIVE_ALARMS_FIELDS.atenea_timestamp)),
       object_id: base.objectId,
@@ -3357,7 +3645,7 @@ function renderAlarmList(units) {
     html += `<div class="alarm-table-scroll"><table class="alarm-table">
       <thead>
         <tr>
-          ${sortTh('tu','TU')}${sortTh('sev','Severity')}${sortTh('code','Alarm code')}${sortTh('msg','Message')}${sortTh('loc','Location')}${sortTh('ts','Timestamp')}${sortTh('ack','Acknowledged')}
+          ${sortTh('tu','TU')}${sortTh('sev','Severity')}${sortTh('code','Alarm code')}${sortTh('msg','Message')}${sortTh('loc','Location')}${sortTh('pos','Position')}${sortTh('ts','Timestamp')}${sortTh('ack','Acknowledged')}
         </tr>
         <tr class="al-filter-row">
           <th>${colInput('tu')}</th>
@@ -3365,13 +3653,14 @@ function renderAlarmList(units) {
           <th>${colInput('code')}</th>
           <th>${colInput('msg')}</th>
           <th>${colInput('loc')}</th>
+          <th>${colInput('pos')}</th>
           <th>${colInput('ts')}</th>
           <th>${ackSelect}</th>
         </tr>
       </thead>
       <tbody>${
         visible.length ? visible.map(alarmRowHtml).join('')
-                       : `<tr class="al-empty-row"><td colspan="7">No alarms match these filters.</td></tr>`
+                       : `<tr class="al-empty-row"><td colspan="8">No alarms match these filters.</td></tr>`
       }</tbody>
     </table></div>`;
   }
@@ -3412,7 +3701,7 @@ function renderAlarmList(units) {
 // consistent, just scoped to what's currently filtered/visible here.
 function downloadAlarmListCsv(rows) {
   const snapshotAt = new Date().toISOString();
-  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'Location', 'AteneaTimestamp', 'Acknowledged', 'Object ID', 'Exported at'];
+  const header = ['TU', 'Unit status', 'Severity', 'Alarm code', 'Alarm message', 'Location', 'Position', 'AteneaTimestamp', 'Acknowledged', 'Object ID', 'Exported at'];
   const lines = [header.map(csvEscape).join(',')];
   rows.forEach(r => {
     lines.push([
@@ -3422,6 +3711,7 @@ function downloadAlarmListCsv(rows) {
       r.alert_code || '',
       r.alert_message || '',
       r.location || '',
+      r.position || '',
       r.atenea_timestamp || '',
       r.acknowledged ? 'Yes' : 'No',
       r.object_id || '',
@@ -3794,10 +4084,11 @@ function renderModalBody() {
     // acknowledge control, so any one can be actioned (not just the worst).
     html += `<div class="modal-alarm-list">` + allAlarms.map((a, i) => `
       <div class="modal-detail${a.acknowledged ? ' is-ack' : ''}">
-        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}${a.acknowledged ? (a.manual_ack ? ' · acknowledged (manual)' : ' · acknowledged (auto)') : ''}</div>
+        <div class="alarm-sev ${escapeAttr(a.status)}">${escapeHtml(STATUS_LABEL[a.status] || a.status)}${a.acknowledged ? (a.manual_ack ? ' · acknowledged (manual)' : (a.ack_reason === 'DEPOT' ? ' · acknowledged (auto \u00b7 in depot)' : ' · acknowledged (auto)')) : ''}</div>
         <div class="code">${escapeHtml(a.alert_code || 'Active alarm')}</div>
         <div class="msg">${escapeHtml(a.alert_message || 'No further detail available.')}</div>
         ${a.location ? `<div class="msg" style="opacity:.75">Location: ${escapeHtml(a.location)}</div>` : ''}
+        ${a.position ? `<div class="msg" style="opacity:.75">Position: ${escapeHtml(a.position)}</div>` : ''}
         <div class="alarm-when">${escapeHtml(formatAteneaTimestamp(a.atenea_timestamp))}</div>
         <button class="btn ${a.acknowledged ? 'btn-unack' : 'btn-ack'} alarm-ack-btn" data-alarm-idx="${i}">
           ${a.acknowledged ? 'Un-acknowledge' : 'Acknowledge this fault'}

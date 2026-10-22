@@ -367,7 +367,7 @@
   .subbar .subhome{font-size:17px;line-height:1}
   #soundBtn.muted{color:var(--ink-faint)}
   .apc-view{display:flex;flex-direction:column}
-  #apcFrame,#fleetstatusFrame{flex:1;width:100%;border:0;background:var(--bg)}
+  #apcFrame,#fleetstatusFrame,#alarmtrendsFrame{flex:1;width:100%;border:0;background:var(--bg)}
   /* reports module */
   .reports-view{display:flex;flex-direction:column}
   .reports-body{flex:1;min-height:0;overflow:auto;padding:24px 22px 60px}
@@ -519,6 +519,7 @@
     <button data-view="reports">Reports</button>
     <button data-view="errorlog">Error Log</button>
     <button data-view="fleetstatus">Fleet Status</button>
+    <button data-view="alarmtrends">Alarm Trends</button>
     <button data-view="stoplist">Stop List</button>
   </nav>
   <div class="spacer"></div>
@@ -687,6 +688,19 @@
   <iframe id="fleetstatusFrame" title="AOR Fleet Status Panel"></iframe>
 </section>
 
+<!-- ALARM TRENDS module -->
+<section class="view apc-view" id="alarmtrendsView" style="display:none">
+  <div class="subbar">
+    <button class="btn icon subhome" id="alarmtrendsHome" title="Back to home" aria-label="Back to home">‹</button>
+    <span class="sub-title">Alarm Trends</span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="alarmtrendsReload" title="Reload">⟳</button>
+    <span class="ver-warn" id="alarmtrendsVerWarn" hidden></span>
+    <a class="btn icon" id="alarmtrendsOpen" href="./alarm-trends.html" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">⤢</a>
+  </div>
+  <iframe id="alarmtrendsFrame" title="Fleet Alarm Trends"></iframe>
+</section>
+
 <div class="scrim" id="errEditScrim"></div>
 <div class="modal" id="errEditModal">
   <div class="modal-head">
@@ -777,9 +791,9 @@
    APP VERSION — increment by 0.1 on every change.
    ============================================================ */
 /* GLOBAL VERSION — one number for the whole suite. When anything changes,
-   bump it by 0.1 in ALL THREE files (main-hub, fleet-status, train_inspection).
+   bump it by 0.1 in ALL FOUR files (main-hub, fleet-status, train_inspection, alarm-trends) and version.json.
    The hub checks the embedded pages against this and flags any mismatch. */
-const APP_VERSION = "6.0";
+const APP_VERSION = "6.8";
 window.APP_VERSION = APP_VERSION;
 
 /* ============================================================
@@ -978,6 +992,7 @@ const MODULES=[
   {view:"apc",live:true,name:"APC",perm:"APC",desc:"3-car unit inspection console & report log.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>'},
   {view:"errorlog",live:true,name:"APC Error Log",perm:"APC_Er",desc:"Every inspection issue across the fleet.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.5v.01"/></svg>'},
   {view:"fleetstatus",live:true,name:"Fleet Status",desc:"Fleet annunciator status panel.",perm:"Fleet_Status",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>'},
+  {view:"alarmtrends",live:true,name:"Alarm Trends",desc:"Daily alarm analytics vs the prior day.",perm:"Alarm_Trends",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-6 4 3 7-8"/><path d="M16 5h4v4"/></svg>'},
   {view:"admin",live:true,name:"Admin",desc:"Create & manage users and permissions.",perm:"Admin",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/><path d="M9.3 12l1.8 1.8 3.4-3.6"/></svg>'},
   {view:"stoplist",live:true,name:"Stop List",perm:"Stop_List",desc:"Hold units from service.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/><path d="M9 9l6 6M15 9l-6 6"/></svg>'},
   {view:null,live:false,name:"Audits",perm:"Audits",desc:"Inspections, compliance & records.",icon:'<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8.5 13l2 2 4-4"/></svg>'},
@@ -1007,6 +1022,7 @@ function showView(name){
   const el = $(name+"View") || $("homeView");
   if(name==="apc"){ const f=$("apcFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src",vurl("./train_inspection.html")); }
   if(name==="fleetstatus"){ const f=$("fleetstatusFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src",vurl("./fleet-status.html")); }
+  if(name==="alarmtrends"){ const f=$("alarmtrendsFrame"); if(f && !f.getAttribute("src")) f.setAttribute("src",vurl("./alarm-trends.html")); }
   if(el) el.style.display="";
   document.querySelectorAll("#mainnav [data-view]").forEach(b=>{ const on=b.dataset.view===name; b.classList.toggle("active",on); on?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"); });
   currentView=name;
@@ -1277,7 +1293,7 @@ async function loadStopList(){
   }catch(err){ if($("stopContent")) $("stopContent").innerHTML='<div class="rep-empty bad">Couldn\u2019t load TU_Status: '+escapeHtml((err.message||err))+'</div>'; }
 }
 /* ---------- Admin: user management ---------- */
-const PERMS=[["Stabling","Stabling"],["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Admin","Admin"]];
+const PERMS=[["APC","APC"],["APC_Er","APC Error Log"],["Reports","Reports"],["Audits","Audits"],["Stop_List","Stop List"],["Fleet_Status","Fleet Status"],["Alarm_Trends","Alarm Trends"],["Admin","Admin"]];
 let adminLoaded=false, adminUsers=[];
 /* ---------- Global version cross-check ----------
  * Each embedded page carries its own APP_VERSION. When a frame loads, compare
@@ -1302,8 +1318,10 @@ function checkFrameVersion(frameId, warnId, label){
 }
 checkFrameVersion("apcFrame","apcVerWarn","train_inspection.html");
 checkFrameVersion("fleetstatusFrame","fleetstatusVerWarn","fleet-status.html");
+checkFrameVersion("alarmtrendsFrame","alarmtrendsVerWarn","alarm-trends.html");
 if($("apcOpen")) $("apcOpen").href=vurl("./train_inspection.html");
 if($("fleetstatusOpen")) $("fleetstatusOpen").href=vurl("./fleet-status.html");
+if($("alarmtrendsOpen")) $("alarmtrendsOpen").href=vurl("./alarm-trends.html");
 
 
 /* ── Update check ──────────────────────────────────────────────────────────
@@ -2201,6 +2219,8 @@ $("subHome").onclick=()=>showView("home");
 $("apcHome").onclick=()=>showView("home");
 $("fleetstatusHome").onclick=()=>showView("home");
 $("fleetstatusReload").onclick=()=>{ const f=$("fleetstatusFrame"); if(f) f.setAttribute("src",vurl("./fleet-status.html")); };
+$("alarmtrendsHome").onclick=()=>showView("home");
+$("alarmtrendsReload").onclick=()=>{ const f=$("alarmtrendsFrame"); if(f) f.setAttribute("src",vurl("./alarm-trends.html")); };
 $("reportsHome").onclick=()=>showView("home");
 $("reportsRefresh").onclick=()=>{ reportsData=null; loadReports(); };
 $("errorlogHome").onclick=()=>showView("home");

@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alarm Trends</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root{
+  --bg:#10141b; --panel:#171d27; --panel-2:#1d2532; --grid:#232c3c; --stroke:#2b3548;
+  --cyan:#5fd0c0; --amber:#e0a544; --green:#74c68f; --red:#e2685f; --violet:#9d6ff2; --sky:#29c6e6;
+  --text:#eef2f6; --text-dim:#8794a8; --text-faint:#56637a;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:radial-gradient(circle at 15% 0%, #16202b 0%, var(--bg) 45%), var(--bg);
+  color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;
+}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 28px 120px;}
+
+/* ---- header ---- */
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--cyan);margin:0 0 10px;display:flex;align-items:center;gap:10px;
+}
+.eyebrow::before{content:"";width:18px;height:1px;background:var(--cyan);display:inline-block;}
+.app-ver{display:inline-block;vertical-align:middle;margin-left:8px;padding:2px 8px;border:1px solid rgba(255,255,255,.18);border-radius:999px;font-size:12px;font-weight:600;letter-spacing:.3px;opacity:.7;font-family:ui-monospace,Consolas,monospace}
+h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(28px,4vw,40px);margin:0 0 24px;letter-spacing:-.01em;}
+.sub{color:var(--text-dim);font-size:15px;margin:0 0 28px;max-width:640px;}
+
+/* ---- day selector box ---- */
+.day-box{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--stroke);border-radius:12px;padding:16px 20px;margin-bottom:14px;
+}
+.day-box label.lbl{
+  font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--text-faint);
+  text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;
+}
+.day-box input[type=date]{
+  background:var(--panel-2);border:1px solid var(--stroke);border-radius:8px;color:var(--text);
+  padding:9px 12px;font-family:'IBM Plex Mono',monospace;font-size:14px;color-scheme:dark;
+}
+.day-box input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.day-box .spacer{flex:1;}
+.chk{display:flex;gap:8px;align-items:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-dim);cursor:pointer;}
+.chk input{accent-color:var(--cyan);}
+.chip{
+  font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
+  border:1px solid var(--stroke);border-radius:20px;padding:5px 12px;white-space:nowrap;
+}
+
+button{
+  font-family:'Inter',sans-serif;font-weight:600;font-size:13.5px;cursor:pointer;
+  border-radius:8px;border:1px solid var(--stroke);padding:9px 16px;
+  background:var(--panel-2);color:var(--text);transition:border-color .15s,transform .1s;
+}
+button:hover{border-color:var(--cyan);}
+button:active{transform:translateY(1px);}
+button.primary{background:var(--cyan);color:#0b1410;border-color:var(--cyan);}
+button.primary:hover{filter:brightness(1.08);}
+button.ghost{background:transparent;}
+button.icon{padding:9px 12px;}
+
+#status{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-faint);margin:0 0 26px;line-height:1.6;}
+#status.err{color:var(--red);}
+
+/* ---- summary strip ---- */
+.summary{
+  display:grid;grid-template-columns:repeat(6,1fr);gap:1px;
+  background:var(--stroke);border:1px solid var(--stroke);border-radius:10px;overflow:hidden;margin-bottom:28px;
+}
+.stat{background:var(--panel);padding:16px 20px;min-width:0;}
+.stat .n{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stat .n.sm{font-size:15px;line-height:31px;}
+.stat .l{font-size:11.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-top:4px;}
+.stat .d{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);margin-top:6px;}
+.stat.n-cyan .n{color:var(--cyan);}
+.stat.n-green .n{color:var(--green);}
+.stat.n-amber .n{color:var(--amber);}
+.stat.n-red .n{color:var(--red);}
+.up{color:var(--red);} .down{color:var(--green);}
+
+/* ---- chart panels ---- */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:28px;}
+.panel{
+  background:var(--panel);border:1px solid var(--stroke);border-radius:14px;
+  padding:48px 20px 18px;position:relative;min-width:0;
+}
+.panel.wide{grid-column:1/-1;}
+.panel .panel-title{
+  font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--text-faint);
+  text-transform:uppercase;letter-spacing:.1em;position:absolute;top:18px;left:22px;
+}
+.panel .panel-hint{
+  font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
+  position:absolute;top:18px;right:22px;
+}
+.chartbox{position:relative;height:270px;}
+.panel.wide .chartbox{height:310px;}
+
+/* ---- alarm log ---- */
+.log-panel{background:var(--panel);border:1px solid var(--stroke);border-radius:14px;margin-bottom:28px;overflow:hidden;}
+.log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 22px;border-bottom:1px solid var(--stroke);}
+.log-head h2{font-family:'Space Grotesk',sans-serif;font-size:16px;margin:0;font-weight:600;}
+.log-head .count{font-family:'IBM Plex Mono',monospace;color:var(--text-dim);font-size:12.5px;margin-left:10px;}
+.log-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.log-tools input{
+  font-family:'IBM Plex Mono',monospace;font-size:12.5px;background:var(--panel-2);
+  border:1px solid var(--stroke);border-radius:7px;color:var(--text);padding:9px 12px;min-width:240px;
+}
+.log-tools input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.log-body{max-height:460px;overflow:auto;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{
+  position:sticky;top:0;background:var(--panel-2);text-align:left;padding:10px 16px;font-size:11px;
+  text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600;
+  border-bottom:1px solid var(--stroke);font-family:'IBM Plex Mono',monospace;white-space:nowrap;
+}
+tbody td{padding:9px 16px;border-bottom:1px solid var(--grid);color:var(--text-dim);font-family:'IBM Plex Mono',monospace;font-size:12.5px;white-space:nowrap;}
+tbody td.msg{white-space:normal;min-width:260px;color:var(--text);}
+tbody td.on{color:var(--red);font-weight:600;}
+tbody tr:hover{background:var(--panel-2);}
+.empty-row td{text-align:center;padding:34px;color:var(--text-faint);font-family:'Inter',sans-serif;}
+.log-foot{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);padding:10px 22px;border-top:1px solid var(--stroke);}
+
+@media (max-width:1000px){.summary{grid-template-columns:repeat(3,1fr);}}
+@media (max-width:760px){
+  .wrap{padding:28px 16px 80px;}
+  .grid{grid-template-columns:1fr;}
+  .summary{grid-template-columns:repeat(2,1fr);}
+  .panel .panel-hint{display:none;}
+  .log-tools input{min-width:0;flex:1;}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Rolling Stock · Fleet Alarm Analytics</p>
+  <h1>Fleet Alarm Trends <span class="app-ver" id="appVer"></span></h1>
+
+  <div class="day-box">
+    <label class="lbl" for="dayPick">Service day</label>
+    <button class="icon" id="prevDay" title="Previous day">◀</button>
+    <input type="date" id="dayPick">
+    <button class="icon" id="nextDay" title="Next day">▶</button>
+    <span class="chip" id="dayChip">—</span>
+    <span class="spacer"></span>
+    <button class="primary" id="reload">Refresh</button>
+  </div>
+  <div id="status">Loading…</div>
+
+  <div class="summary">
+    <div class="stat n-cyan"><div class="n" id="kTotal">–</div><div class="l">Alarms</div><div class="d" id="kTotalD"></div></div>
+    <div class="stat n-amber"><div class="n" id="kUnits">–</div><div class="l">Units Affected</div><div class="d" id="kUnitsD"></div></div>
+    <div class="stat"><div class="n" id="kPer">–</div><div class="l">Alarms / Unit</div><div class="d" id="kPerD"></div></div>
+    <div class="stat"><div class="n" id="kPeak">–</div><div class="l">Peak Hour</div><div class="d" id="kPeakD"></div></div>
+    <div class="stat n-red"><div class="n" id="kTopUnit">–</div><div class="l">Worst Unit</div><div class="d" id="kTopUnitD"></div></div>
+    <div class="stat"><div class="n sm" id="kTopAlarm">–</div><div class="l">Top Alarm</div><div class="d" id="kTopAlarmD"></div></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel wide">
+      <span class="panel-title">Alarms per Hour</span><span class="panel-hint">selected vs prior day</span>
+      <div class="chartbox"><canvas id="cHourly"></canvas></div>
+    </div>
+    <div class="panel wide">
+      <span class="panel-title">Units in Alarm per Hour</span>
+      <div class="chartbox"><canvas id="cUnitsHour"></canvas></div>
+    </div>
+    <div class="panel wide">
+      <span class="panel-title">Hourly Trend · Top 5 Units</span>
+      <div class="chartbox"><canvas id="cTopUnitsTrend"></canvas></div>
+    </div>
+    <div class="panel">
+      <span class="panel-title">Top 10 Units</span>
+      <div class="chartbox"><canvas id="cTopUnits"></canvas></div>
+    </div>
+    <div class="panel">
+      <span class="panel-title">Top 10 Alarms</span>
+      <div class="chartbox"><canvas id="cTopAlarms"></canvas></div>
+    </div>
+    <div class="panel wide">
+      <span class="panel-title">Alarms by Position</span><span class="panel-hint">Depot excluded</span>
+      <div class="chartbox" style="height:230px"><canvas id="cPosition"></canvas></div>
+    </div>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-head">
+      <div><h2 style="display:inline">Alarm Log</h2><span class="count" id="tblCount"></span></div>
+      <div class="log-tools">
+        <input type="search" id="search" placeholder="Filter unit, alarm, position…">
+        <button id="csv">Export CSV</button>
+      </div>
+    </div>
+    <div class="log-body"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <div class="log-foot" id="tblNote"></div>
+  </div>
+</div>
+
+<script>
+/* GLOBAL VERSION — must match main-hub.html, fleet-status.html, train_inspection.html and version.json. */
+const APP_VERSION = "6.8";
+window.APP_VERSION = APP_VERSION;
+document.getElementById('appVer').textContent = 'v' + APP_VERSION;
+
+/* ===================== CONFIG ===================== */
+const CONFIG = {
+  APP_ID:     '9xUYm76BkdVDhSfkvYvehb1QcpAEnnmaehvEmNio',
+  JS_KEY:     'OPQgUuKKwpvGbgHybL3d5zVfUXfiXlts5Fi9WoNM',
+  SERVER_URL: 'https://parseapi.back4app.com/',
+  CLASS_NAME: 'Live_Alarms',
+  TS_FIELD:   'ateneaTimestamp',
+  POSITION_FIELD: 'Position',    // verified: only set on flag=On rows
+  EXCLUDE_POSITIONS: ['Depot', 'DEPOT', 'depot'],
+  // Verified Live_Alarms columns (null = auto-detect)
+  FIELDS: { unit: 'tu', alarm: 'description', flag: 'flag', severity: 'severity' },
+  ON_VALUES: ['On', 'ON', 'on'],   // count raise events only — Off rows carry no Position
+  PAGE_SIZE: 1000
+};
+/* ================================================== */
+
+const CANDIDATES = {
+  unit:     ['TU','tu','unit','Unit','unitNumber','UnitNumber','unitId','trainUnit','TrainUnit','vehicle','Vehicle','VEHID','vehId','consist'],
+  alarm:    ['alarmText','AlarmText','alarm','Alarm','alarmName','AlarmName','description','Description','message','Message','faultDescription','fault','Fault','text','alarmCode','AlarmCode','code','Code'],
+  flag:     ['Flag','flag','state','State'],
+  position: ['position','Position','POSITION','pos','Pos','currentPosition','CurrentPosition','trainPosition','location','Location','LOCATION','station','Station'],
+  severity: ['severity','Severity','priority','Priority','level','Level','category','Category','alarmClass']
+};
+
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const HOURS = Array.from({length:24}, (_,h) => pad(h)+':00');
+const charts = {};
+let tsMode = null;           // 'date' | 'ms' | 's' | 'string'
+let posField = null;         // detected position column
+let fieldMap = null;
+let current = [];            // selected-day records (after filters)
+let flagAvailable = false;
+
+const configured = !CONFIG.APP_ID.startsWith('YOUR_') && !CONFIG.JS_KEY.startsWith('YOUR_');
+if (configured) {
+  Parse.initialize(CONFIG.APP_ID, CONFIG.JS_KEY);
+  Parse.serverURL = CONFIG.SERVER_URL;
+}
+
+/* ---------- dates ---------- */
+function toInput(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function fromInput(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+function addDays(d,n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtTime(d){ return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function fmtDay(d){ return d.toLocaleDateString('en-NZ',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); }
+
+// Day-first match runs BEFORE Date.parse to avoid month/day swaps
+function parseTs(v){
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  if (typeof v === 'number') return new Date(v < 1e12 ? v*1000 : v);
+  if (typeof v === 'object' && v.iso) return new Date(v.iso);
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?)?/i);
+  if (m) {
+    let [, dd, mm, yy, hh='0', mi='0', ss='0', ap] = m;
+    yy = +yy; if (yy < 100) yy += 2000;
+    hh = +hh; if (ap) { ap = ap.toLowerCase(); if (ap==='pm' && hh<12) hh+=12; if (ap==='am' && hh===12) hh=0; }
+    const d = new Date(yy, +mm-1, +dd, hh, +mi, +ss);
+    return isNaN(d) ? null : d;
+  }
+  const t = Date.parse(s);
+  return isNaN(t) ? null : new Date(t);
+}
+
+/* ---------- data ---------- */
+async function detectTsMode(){
+  if (tsMode) return tsMode;
+  // Probe recent rows once to learn the timestamp type and the position column name
+  const q = new Parse.Query(CONFIG.CLASS_NAME);
+  q.descending('createdAt');
+  q.limit(50);
+  const sample = await q.find();
+  const counts = {};
+  sample.forEach(o => Object.entries(o.attributes).forEach(([k,v]) => { if (v !== '' && v != null) counts[k] = (counts[k]||0)+1; }));
+  posField = CONFIG.POSITION_FIELD
+    || CANDIDATES.position.find(c => counts[c])
+    || Object.keys(counts).find(k => /pos|loc/i.test(k))
+    || null;
+  const withTs = sample.find(o => o.get(CONFIG.TS_FIELD) != null);
+  const v = withTs ? withTs.get(CONFIG.TS_FIELD) : null;
+  if (v instanceof Date) tsMode = 'date';
+  else if (typeof v === 'number') tsMode = v < 1e12 ? 's' : 'ms';
+  else tsMode = 'string';
+  return tsMode;
+}
+
+async function fetchRange(start, end){
+  const mode = await detectTsMode();
+  const TS = CONFIG.TS_FIELD;
+  const q = new Parse.Query(CONFIG.CLASS_NAME);
+  if (mode === 'date') { q.greaterThanOrEqualTo(TS, start); q.lessThan(TS, end); }
+  else if (mode === 'ms') { q.greaterThanOrEqualTo(TS, start.getTime()); q.lessThan(TS, end.getTime()); }
+  else if (mode === 's') { q.greaterThanOrEqualTo(TS, Math.floor(start/1000)); q.lessThan(TS, Math.floor(end/1000)); }
+  else {
+    // String timestamps can't be range-queried; use a createdAt window then filter client-side
+    q.greaterThanOrEqualTo('createdAt', new Date(start.getTime() - 12*3600e3));
+    q.lessThan('createdAt', new Date(end.getTime() + 12*3600e3));
+  }
+  if (posField) q.notContainedIn(posField, CONFIG.EXCLUDE_POSITIONS);
+  if (CONFIG.FIELDS.flag) q.containedIn(CONFIG.FIELDS.flag, CONFIG.ON_VALUES);
+  q.ascending('createdAt');
+  q.limit(CONFIG.PAGE_SIZE);
+
+  const out = [];
+  for (let skip = 0; ; skip += CONFIG.PAGE_SIZE) {
+    q.skip(skip);
+    const page = await q.find();
+    out.push(...page);
+    setStatus(`Loading… ${out.length} records`);
+    if (page.length < CONFIG.PAGE_SIZE) break;
+  }
+  return out;
+}
+
+function detectFields(objs){
+  const counts = {};
+  for (const o of objs.slice(0, 500)) for (const [k,v] of Object.entries(o.attributes)) if (v !== '' && v != null) counts[k] = (counts[k]||0)+1;
+  const pick = key => CONFIG.FIELDS[key] || CANDIDATES[key].filter(c => counts[c]).sort((a,b)=>counts[b]-counts[a])[0] || null;
+  const map = { unit: pick('unit'), alarm: pick('alarm'), flag: pick('flag'), severity: pick('severity') };
+  // only treat as flag if values look like ON/OFF
+  if (map.flag && !CONFIG.FIELDS.flag) {
+    const vals = new Set(objs.slice(0,500).map(o => String(o.get(map.flag)).toUpperCase()));
+    if (!vals.has('ON') && !vals.has('OFF')) map.flag = null;
+  }
+  return map;
+}
+
+const isDepot = p => String(p||'').trim().toLowerCase() === 'depot';
+
+function normalise(objs){
+  return objs.map(o => {
+    const g = f => f ? o.get(f) : null;
+    return {
+      ts: parseTs(o.get(CONFIG.TS_FIELD)),
+      unit: g(fieldMap.unit) != null ? String(g(fieldMap.unit)).trim() : '(unknown)',
+      alarm: g(fieldMap.alarm) != null ? String(g(fieldMap.alarm)).trim() : '(unspecified)',
+      pos: String((posField ? o.get(posField) : null) ?? '(none)').trim() || '(none)',
+      sev: fieldMap.severity ? String(g(fieldMap.severity) ?? '') : '',
+      flag: fieldMap.flag ? String(g(fieldMap.flag) ?? '').toUpperCase() : ''
+    };
+  }).filter(r => r.ts && !isDepot(r.pos));
+}
+
+/* ---------- aggregation ---------- */
+const natural = (a,b) => a.localeCompare(b, undefined, {numeric:true, sensitivity:'base'});
+function countBy(rows, key){ const m = new Map(); rows.forEach(r => m.set(r[key], (m.get(r[key])||0)+1)); return [...m].sort((a,b)=>b[1]-a[1] || natural(String(a[0]),String(b[0]))); }
+function hourly(rows){ const a = Array(24).fill(0); rows.forEach(r => a[r.ts.getHours()]++); return a; }
+function unitsPerHour(rows){ const s = Array.from({length:24},()=>new Set()); rows.forEach(r => s[r.ts.getHours()].add(r.unit)); return s.map(x=>x.size); }
+
+/* ---------- charts ---------- */
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+const PALETTE = ['#5fd0c0','#e0a544','#74c68f','#e2685f','#9d6ff2','#29c6e6','#e58fb8','#c4d65a','#e88b5a','#8fa3ff'];
+
+function chart(id, cfg){
+  if (charts[id]) charts[id].destroy();
+  const muted = css('--text-dim'), grid = css('--grid');
+  Chart.defaults.color = muted;
+  Chart.defaults.font.family = "'IBM Plex Mono',monospace";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.plugins.tooltip.backgroundColor = css('--panel-2');
+  Chart.defaults.plugins.tooltip.borderColor = css('--stroke');
+  Chart.defaults.plugins.tooltip.borderWidth = 1;
+  Chart.defaults.plugins.tooltip.titleColor = css('--text');
+  Chart.defaults.plugins.tooltip.bodyColor = css('--text-dim');
+  cfg.options = Object.assign({
+    responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+    plugins:{legend:{align:'end',labels:{boxWidth:9,boxHeight:9,useBorderRadius:true,borderRadius:2}}},
+    scales:{x:{grid:{color:grid}}, y:{grid:{color:grid}, beginAtZero:true, ticks:{precision:0}}}
+  }, cfg.options || {});
+  charts[id] = new Chart($(id), cfg);
+}
+
+function line(label, data, color, dashed){
+  return { label, data, borderColor: color, backgroundColor: color+'33', tension:.3, pointRadius:2, borderWidth: dashed?1.5:2.5, borderDash: dashed?[6,4]:[], fill:false };
+}
+
+function hbar(id, entries, color){
+  chart(id, {
+    type:'bar',
+    data:{ labels: entries.map(e=>e[0]), datasets:[{ data: entries.map(e=>e[1]), backgroundColor: color+'55', borderColor: color, borderWidth:1, borderRadius:3 }] },
+    options:{ indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{ x:{beginAtZero:true, grid:{color:css('--grid')}, ticks:{precision:0}}, y:{grid:{display:false}, ticks:{callback(v){ const l=this.getLabelForValue(v); return l.length>34?l.slice(0,33)+'…':l; }}} } }
+  });
+}
+
+/* ---------- render ---------- */
+function delta(cur, prev, lowerIsBetter=true){
+  if (!prev) return '';
+  const p = ((cur-prev)/prev)*100;
+  const cls = (p>0) === lowerIsBetter ? 'up' : 'down';
+  return `<span class="${cls}">${p>0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span> vs prior day (${prev})`;
+}
+
+function render(day, prev, dayDate){
+  current = day;
+  const hDay = hourly(day), hPrev = hourly(prev);
+  const unitsDay = new Set(day.map(r=>r.unit)), unitsPrev = new Set(prev.map(r=>r.unit));
+  const topUnits = countBy(day,'unit'), topAlarms = countBy(day,'alarm');
+  const peak = hDay.indexOf(Math.max(...hDay));
+
+  $('kTotal').textContent = day.length;
+  $('kTotalD').innerHTML = delta(day.length, prev.length);
+  $('kUnits').textContent = unitsDay.size;
+  $('kUnitsD').innerHTML = delta(unitsDay.size, unitsPrev.size);
+  const per = unitsDay.size ? day.length/unitsDay.size : 0, perPrev = unitsPrev.size ? prev.length/unitsPrev.size : 0;
+  $('kPer').textContent = per.toFixed(1);
+  $('kPerD').innerHTML = perPrev ? `prior day ${perPrev.toFixed(1)}` : '';
+  $('kPeak').textContent = day.length ? HOURS[peak] : '–';
+  $('kPeakD').textContent = day.length ? `${hDay[peak]} alarms` : '';
+  $('kTopUnit').textContent = topUnits[0]?.[0] ?? '–';
+  $('kTopUnitD').textContent = topUnits[0] ? `${topUnits[0][1]} alarms` : '';
+  $('kTopAlarm').textContent = topAlarms[0]?.[0] ?? '–';
+  $('kTopAlarm').title = topAlarms[0]?.[0] ?? '';
+  $('kTopAlarmD').textContent = topAlarms[0] ? `${topAlarms[0][1]} occurrences` : '';
+
+  const A = css('--cyan'), B = css('--amber'), M = css('--text-faint');
+  const dLabel = fmtDay(dayDate), pLabel = fmtDay(addDays(dayDate,-1));
+
+  chart('cHourly', { type:'line', data:{ labels:HOURS, datasets:[ line(dLabel, hDay, A), line(pLabel, hPrev, M, true) ] } });
+  chart('cUnitsHour', { type:'line', data:{ labels:HOURS, datasets:[ line(dLabel, unitsPerHour(day), B), line(pLabel, unitsPerHour(prev), M, true) ] } });
+
+  const top5 = topUnits.slice(0,5).map(e=>e[0]);
+  chart('cTopUnitsTrend', { type:'line', data:{ labels:HOURS,
+    datasets: top5.map((u,i) => line(`Unit ${u}`, hourly(day.filter(r=>r.unit===u)), PALETTE[i])) } });
+
+  hbar('cTopUnits', topUnits.slice(0,10), A);
+  hbar('cTopAlarms', topAlarms.slice(0,10), B);
+  $('dayChip').textContent = dLabel;
+
+  const pos = countBy(day,'pos').slice(0,20);
+  chart('cPosition', { type:'bar', data:{ labels:pos.map(e=>e[0]), datasets:[{ data:pos.map(e=>e[1]), backgroundColor:PALETTE.map(c=>c+'99'), borderColor:PALETTE, borderWidth:1, borderRadius:4 }] },
+    options:{ plugins:{legend:{display:false}} } });
+
+  renderTable();
+}
+
+function cols(){
+  const c = [['Time',r=>fmtTime(r.ts)],['Unit',r=>r.unit],['Alarm',r=>r.alarm],['Position',r=>r.pos]];
+  if (fieldMap.severity) c.push(['Severity',r=>r.sev]);
+  if (fieldMap.flag) c.push(['Flag',r=>r.flag]);
+  return c;
+}
+
+function filtered(){
+  const s = $('search').value.trim().toLowerCase();
+  const rows = [...current].sort((a,b)=>b.ts-a.ts);
+  return s ? rows.filter(r => `${r.unit} ${r.alarm} ${r.pos} ${r.sev}`.toLowerCase().includes(s)) : rows;
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function renderTable(){
+  const c = cols(), rows = filtered(), MAX = 1000;
+  $('tbl').querySelector('thead').innerHTML = '<tr>' + c.map(x=>`<th>${x[0]}</th>`).join('') + '</tr>';
+  $('tbl').querySelector('tbody').innerHTML = rows.slice(0,MAX).map(r =>
+    '<tr>' + c.map(x=>{ const v = x[1](r); const cls = x[0]==='Alarm' ? ' class="msg"' : (x[0]==='Flag' && v==='ON' ? ' class="on"' : ''); return `<td${cls}>${esc(v)}</td>`; }).join('') + '</tr>').join('')
+    || `<tr class="empty-row"><td colspan="${c.length}">No alarms for this day.</td></tr>`;
+  $('tblCount').textContent = `${rows.length} rows`;
+  $('tblNote').textContent = rows.length > MAX ? `Showing ${MAX} of ${rows.length} — use the filter or export CSV for all` : 'Newest first';
+}
+
+function exportCsv(){
+  const c = cols(), rows = filtered();
+  const q = v => `"${String(v).replace(/"/g,'""')}"`;
+  const csv = [c.map(x=>q(x[0])).join(','), ...rows.map(r => c.map(x=>q(x[1](r))).join(','))].join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+  a.download = `alarms_${$('dayPick').value}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ---------- load ---------- */
+function setStatus(msg, err){ $('status').textContent = msg; $('status').className = err ? 'err' : ''; }
+
+let lastRaw = null;
+async function load(){
+  if (!configured) { setStatus('Parse keys missing in CONFIG.', true); return; }
+  const dayDate = fromInput($('dayPick').value);
+  const start = addDays(dayDate,-1), end = addDays(dayDate,1);
+  try {
+    setStatus('Loading…');
+    const objs = await fetchRange(start, end);
+    fieldMap = detectFields(objs);
+    flagAvailable = !!fieldMap.flag;
+    lastRaw = { all: normalise(objs), dayDate };
+    applyAndRender();
+  } catch (e) {
+    console.error(e);
+    const perm = [101,119,209].includes(e.code);
+    setStatus(perm ? `Access denied (${e.code}): sign in via Main Hub on this domain first, then refresh.` : `Error loading alarms: ${e.message || e}`, true);
+  }
+}
+
+function applyAndRender(){
+  if (!lastRaw) return;
+  const { all, dayDate } = lastRaw;
+  const rows = fieldMap.flag ? all.filter(r => r.flag === 'ON') : all;
+  const dStart = dayDate, dEnd = addDays(dayDate,1), pStart = addDays(dayDate,-1);
+  const day = rows.filter(r => r.ts >= dStart && r.ts < dEnd);
+  const prev = rows.filter(r => r.ts >= pStart && r.ts < dStart);
+  setStatus(`${fmtDay(dayDate)} — ${day.length} alarms` + (posField ? ' (On events, Depot excluded)' : ' — WARNING: no position column found, Depot NOT excluded; set CONFIG.POSITION_FIELD'), !posField);
+  render(day, prev, dayDate);
+}
+
+/* ---------- wire up ---------- */
+$('dayPick').value = toInput(addDays(new Date(),-1));
+$('dayPick').max = toInput(new Date());
+$('dayPick').addEventListener('change', load);
+$('prevDay').onclick = () => { $('dayPick').value = toInput(addDays(fromInput($('dayPick').value),-1)); load(); };
+$('nextDay').onclick = () => { const n = addDays(fromInput($('dayPick').value),1); if (n <= new Date()) { $('dayPick').value = toInput(n); load(); } };
+$('reload').onclick = load;
+$('search').oninput = renderTable;
+$('csv').onclick = exportCsv;
+load();
+</script>
+</body>
+</html>

@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Alarm Trends</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/parse/5.3.0/parse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -206,7 +205,7 @@ tbody tr:hover{background:var(--panel-2);}
 
 <script>
 /* GLOBAL VERSION — must match main-hub.html, fleet-status.html, train_inspection.html and version.json. */
-const APP_VERSION = "6.8";
+const APP_VERSION = "6.9";
 window.APP_VERSION = APP_VERSION;
 document.getElementById('appVer').textContent = 'v' + APP_VERSION;
 
@@ -245,9 +244,32 @@ let current = [];            // selected-day records (after filters)
 let flagAvailable = false;
 
 const configured = !CONFIG.APP_ID.startsWith('YOUR_') && !CONFIG.JS_KEY.startsWith('YOUR_');
-if (configured) {
-  Parse.initialize(CONFIG.APP_ID, CONFIG.JS_KEY);
-  Parse.serverURL = CONFIG.SERVER_URL;
+
+/* ---------- Back4App REST (same method as fleet-status.html) ----------
+ * Reads Live_Alarms with the app keys only and NO session token. The Parse SDK
+ * attached the hub's stored session, and a stale or revoked session made every
+ * query fail with 209 even though Live_Alarms needs no sign-in. Rows are wrapped
+ * so the rest of the page can keep using o.get(field) and o.attributes. */
+const isDateObj = v => v && typeof v === 'object' && v.__type === 'Date';
+const toParseDate = d => ({ __type: 'Date', iso: d.toISOString() });
+function wrapRow(r){
+  const attributes = {};
+  Object.keys(r).forEach(k => { if (k !== 'objectId' && k !== 'ACL') attributes[k] = isDateObj(r[k]) ? new Date(r[k].iso) : r[k]; });
+  if (typeof attributes.createdAt === 'string') attributes.createdAt = new Date(attributes.createdAt);
+  return { id: r.objectId, attributes, get: k => attributes[k] };
+}
+async function restFind(where, opts){
+  const p = new URLSearchParams();
+  if (where && Object.keys(where).length) p.set('where', JSON.stringify(where));
+  if (opts.order) p.set('order', opts.order);
+  p.set('limit', String(opts.limit || 100));
+  if (opts.skip) p.set('skip', String(opts.skip));
+  const res = await fetch(CONFIG.SERVER_URL.replace(/\/$/, '') + '/classes/' + CONFIG.CLASS_NAME + '?' + p.toString(), {
+    headers: { 'X-Parse-Application-Id': CONFIG.APP_ID, 'X-Parse-JavaScript-Key': CONFIG.JS_KEY }
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(body.error || ('Back4App HTTP ' + res.status)); e.code = body.code || res.status; throw e; }
+  return (body.results || []).map(wrapRow);
 }
 
 /* ---------- dates ---------- */
@@ -280,10 +302,7 @@ function parseTs(v){
 async function detectTsMode(){
   if (tsMode) return tsMode;
   // Probe recent rows once to learn the timestamp type and the position column name
-  const q = new Parse.Query(CONFIG.CLASS_NAME);
-  q.descending('createdAt');
-  q.limit(50);
-  const sample = await q.find();
+  const sample = await restFind({}, { order: '-createdAt', limit: 50 });
   const counts = {};
   sample.forEach(o => Object.entries(o.attributes).forEach(([k,v]) => { if (v !== '' && v != null) counts[k] = (counts[k]||0)+1; }));
   posField = CONFIG.POSITION_FIELD
@@ -301,24 +320,20 @@ async function detectTsMode(){
 async function fetchRange(start, end){
   const mode = await detectTsMode();
   const TS = CONFIG.TS_FIELD;
-  const q = new Parse.Query(CONFIG.CLASS_NAME);
-  if (mode === 'date') { q.greaterThanOrEqualTo(TS, start); q.lessThan(TS, end); }
-  else if (mode === 'ms') { q.greaterThanOrEqualTo(TS, start.getTime()); q.lessThan(TS, end.getTime()); }
-  else if (mode === 's') { q.greaterThanOrEqualTo(TS, Math.floor(start/1000)); q.lessThan(TS, Math.floor(end/1000)); }
+  const where = {};
+  if (mode === 'date') where[TS] = { $gte: toParseDate(start), $lt: toParseDate(end) };
+  else if (mode === 'ms') where[TS] = { $gte: start.getTime(), $lt: end.getTime() };
+  else if (mode === 's') where[TS] = { $gte: Math.floor(start/1000), $lt: Math.floor(end/1000) };
   else {
     // String timestamps can't be range-queried; use a createdAt window then filter client-side
-    q.greaterThanOrEqualTo('createdAt', new Date(start.getTime() - 12*3600e3));
-    q.lessThan('createdAt', new Date(end.getTime() + 12*3600e3));
+    where.createdAt = { $gte: toParseDate(new Date(start.getTime() - 12*3600e3)), $lt: toParseDate(new Date(end.getTime() + 12*3600e3)) };
   }
-  if (posField) q.notContainedIn(posField, CONFIG.EXCLUDE_POSITIONS);
-  if (CONFIG.FIELDS.flag) q.containedIn(CONFIG.FIELDS.flag, CONFIG.ON_VALUES);
-  q.ascending('createdAt');
-  q.limit(CONFIG.PAGE_SIZE);
+  if (posField) where[posField] = { $nin: CONFIG.EXCLUDE_POSITIONS };
+  if (CONFIG.FIELDS.flag) where[CONFIG.FIELDS.flag] = { $in: CONFIG.ON_VALUES };
 
   const out = [];
   for (let skip = 0; ; skip += CONFIG.PAGE_SIZE) {
-    q.skip(skip);
-    const page = await q.find();
+    const page = await restFind(where, { order: 'createdAt', limit: CONFIG.PAGE_SIZE, skip });
     out.push(...page);
     setStatus(`Loading… ${out.length} records`);
     if (page.length < CONFIG.PAGE_SIZE) break;
@@ -502,7 +517,7 @@ async function load(){
   } catch (e) {
     console.error(e);
     const perm = [101,119,209].includes(e.code);
-    setStatus(perm ? `Access denied (${e.code}): sign in via Main Hub on this domain first, then refresh.` : `Error loading alarms: ${e.message || e}`, true);
+    setStatus(perm ? `Access denied (${e.code}): Back4App refused the request — check Live_Alarms Find permission for the JavaScript key.` : `Error loading alarms: ${e.message || e}`, true);
   }
 }
 

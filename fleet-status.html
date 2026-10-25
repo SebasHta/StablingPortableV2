@@ -1636,7 +1636,7 @@ const TU_STATUS_FIELDS = {
    IS_TEST_BUILD = true only for a parallel test copy: it disables the
    self-update reload and shows an orange TEST badge. */
 const IS_TEST_BUILD = false;
-const APP_VERSION = "6.9";
+const APP_VERSION = "7.0";
 window.APP_VERSION = APP_VERSION;
 (function showPanelVersion() {
   const v = document.getElementById('panelVer');
@@ -1734,10 +1734,13 @@ const UT_LOCATION_FIELDS = { tu: ['VehId'], position: ['Position'] };
 // Unit codes may arrive as AMP103 (tracker style) or with spaces; the roster uses AM103.
 function normUnit(v) { return String(v || '').toUpperCase().replace(/\s+/g, '').replace(/^AMP(?=\d)/, 'AM'); }
 let utLocationDiag = '';   // shown in the Units not tracked box
-// Re-read on every 60s alarm poll so a new alarm is stamped with a position at
-// most ~1 min old (matters for DEPOT auto-acknowledge). Set just under
-// LIVE_REFRESH_MS: exactly 60000 could miss by a few ms and wait 2 minutes.
-const UT_LOCATION_REFRESH_MS = 55000;       // ~1 min (was 5 min)
+// Since v7.0 positions are stamped by Back4App Cloud Code (beforeSave on
+// Live_Alarms) at the moment each alarm is created. This page now reads
+// UT_Location only for the "Units not tracked" box, so 5 minutes is plenty.
+const UT_LOCATION_REFRESH_MS = 300000;      // 5 min
+// Rollback switch: true = this page stamps positions itself again (pre-7.0
+// behaviour). Leave false while the Cloud Code trigger is deployed.
+const CLIENT_POSITION_STAMPING = false;
 // Alarms already in Live_Alarms when this page first loads are the baseline and are
 // never touched. Only alarms that appear AFTER the page opened get a Position.
 // Comparing objectIds (not timestamps) avoids any PC-clock vs server-clock drift.
@@ -2761,7 +2764,7 @@ async function loadFleet() {
   notePoll(liveRecords, liveStale, pollErr);
   try { await fetchRepeatAcks(false); } catch (err) { console.warn('RepeatFaultAck fetch failed:', err); }
   try { await fetchUtLocations(false); } catch (err) { console.warn('UT_Location fetch failed:', err); }
-  if (liveRecords) { try { enrichPositions(liveRecords); } catch (err) { console.warn('Position stamping failed (refresh continues):', err); } }
+  if (liveRecords && CLIENT_POSITION_STAMPING) { try { enrichPositions(liveRecords); } catch (err) { console.warn('Position stamping failed (refresh continues):', err); } }
 
   // TU_Status (Out of Service) is fetched independently of Live_Alarms and
   // applied the same way regardless of which branch below ends up running

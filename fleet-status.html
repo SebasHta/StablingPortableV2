@@ -1636,7 +1636,7 @@ const TU_STATUS_FIELDS = {
    IS_TEST_BUILD = true only for a parallel test copy: it disables the
    self-update reload and shows an orange TEST badge. */
 const IS_TEST_BUILD = false;
-const APP_VERSION = "7.0";
+const APP_VERSION = "7.21";
 window.APP_VERSION = APP_VERSION;
 (function showPanelVersion() {
   const v = document.getElementById('panelVer');
@@ -1761,7 +1761,7 @@ let repeatEscalatedTus = new Set();   // escalated + still quiet
 let repeatPendingTus = new Map();     // tu -> highest occurrence count awaiting escalation
 let repeatMinCount = 3;
 let alarmColFilters = { tu:'', sev:'', code:'', msg:'', loc:'', pos:'', ts:'', ack:'' };
-let alarmSort = { col: null, dir: 'asc' };
+let alarmSort = { col: 'ts', dir: 'desc' };   // default: latest alarm first
 let alarmListBase = [];
 let alarmListVisible = [];
 const autoAckedThisSession = new Set();
@@ -3686,7 +3686,7 @@ function renderAlarmList(units) {
     th.addEventListener('click', () => {
       const col = th.dataset.sortcol;
       if (alarmSort.col === col) alarmSort.dir = alarmSort.dir === 'asc' ? 'desc' : 'asc';
-      else { alarmSort.col = col; alarmSort.dir = 'asc'; }
+      else { alarmSort.col = col; alarmSort.dir = col === 'ts' ? 'desc' : 'asc'; }   // Timestamp starts newest-first
       updateSortIndicators(wrap);
       renderAlarmTbody();
     });

@@ -113,6 +113,10 @@ button.icon{padding:9px 12px;}
   border:1px solid var(--stroke);border-radius:7px;color:var(--text);padding:9px 12px;min-width:240px;
 }
 .log-tools input:focus{outline:2px solid var(--cyan);outline-offset:1px;}
+.unit-pill{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+  background:rgba(95,208,192,.12);border:1px solid var(--cyan);color:var(--cyan);border-radius:20px;padding:5px 6px 5px 12px;}
+.unit-pill[hidden]{display:none;}
+.unit-pill button{padding:2px 8px;font-size:12px;border-radius:12px;background:transparent;border-color:var(--cyan);color:var(--cyan);}
 .log-body{max-height:460px;overflow:auto;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 thead th{
@@ -177,7 +181,7 @@ tbody tr:hover{background:var(--panel-2);}
       <div class="chartbox"><canvas id="cTopUnitsTrend"></canvas></div>
     </div>
     <div class="panel">
-      <span class="panel-title">Top 10 Units</span>
+      <span class="panel-title">Top 10 Units</span><span class="panel-hint">click a bar to see its alarms</span>
       <div class="chartbox"><canvas id="cTopUnits"></canvas></div>
     </div>
     <div class="panel">
@@ -194,7 +198,8 @@ tbody tr:hover{background:var(--panel-2);}
     <div class="log-head">
       <div><h2 style="display:inline">Alarm Log</h2><span class="count" id="tblCount"></span></div>
       <div class="log-tools">
-        <input type="search" id="search" placeholder="Filter unit, alarm, position…">
+        <span class="unit-pill" id="unitPill" hidden>Unit <strong id="unitPillName"></strong><button id="unitPillClear" title="Show all units">✕</button></span>
+        <input type="search" id="search" placeholder="Filter unit, alarm, position, location…">
         <button id="csv">Export CSV</button>
       </div>
     </div>
@@ -205,7 +210,7 @@ tbody tr:hover{background:var(--panel-2);}
 
 <script>
 /* GLOBAL VERSION — must match main-hub.html, fleet-status.html, train_inspection.html and version.json. */
-const APP_VERSION = "7.0";
+const APP_VERSION = "7.21";
 window.APP_VERSION = APP_VERSION;
 document.getElementById('appVer').textContent = 'v' + APP_VERSION;
 
@@ -219,7 +224,7 @@ const CONFIG = {
   POSITION_FIELD: 'Position',    // verified: only set on flag=On rows
   EXCLUDE_POSITIONS: ['Depot', 'DEPOT', 'depot'],
   // Verified Live_Alarms columns (null = auto-detect)
-  FIELDS: { unit: 'tu', alarm: 'description', flag: 'flag', severity: 'severity' },
+  FIELDS: { unit: 'tu', alarm: 'description', flag: 'flag', severity: 'severity', location: 'location' },
   ON_VALUES: ['On', 'ON', 'on'],   // count raise events only — Off rows carry no Position
   PAGE_SIZE: 1000
 };
@@ -364,6 +369,7 @@ function normalise(objs){
       unit: g(fieldMap.unit) != null ? String(g(fieldMap.unit)).trim() : '(unknown)',
       alarm: g(fieldMap.alarm) != null ? String(g(fieldMap.alarm)).trim() : '(unspecified)',
       pos: String((posField ? o.get(posField) : null) ?? '(none)').trim() || '(none)',
+      loc: String(o.get(CONFIG.FIELDS.location) ?? '').trim(),
       sev: fieldMap.severity ? String(g(fieldMap.severity) ?? '') : '',
       flag: fieldMap.flag ? String(g(fieldMap.flag) ?? '').toUpperCase() : ''
     };
@@ -403,11 +409,20 @@ function line(label, data, color, dashed){
   return { label, data, borderColor: color, backgroundColor: color+'33', tension:.3, pointRadius:2, borderWidth: dashed?1.5:2.5, borderDash: dashed?[6,4]:[], fill:false };
 }
 
-function hbar(id, entries, color){
+// onPick(label): optional; makes bars clickable. selected: label drawn highlighted.
+function hbar(id, entries, color, onPick, selected){
+  const sel = l => selected && l === selected;
   chart(id, {
     type:'bar',
-    data:{ labels: entries.map(e=>e[0]), datasets:[{ data: entries.map(e=>e[1]), backgroundColor: color+'55', borderColor: color, borderWidth:1, borderRadius:3 }] },
+    data:{ labels: entries.map(e=>e[0]), datasets:[{ data: entries.map(e=>e[1]),
+      backgroundColor: entries.map(e => sel(e[0]) ? color : color+'55'),
+      borderColor: color, borderWidth: entries.map(e => sel(e[0]) ? 2 : 1), borderRadius:3 }] },
     options:{ indexAxis:'y', plugins:{legend:{display:false}},
+      // Horizontal bars: match the mouse by ROW (y). The shared default matches
+      // by x, which made the empty space beside a short bar show/pick the longest bar.
+      interaction:{ mode:'index', axis:'y', intersect:false },
+      onClick: onPick ? (evt, els) => { if (els && els.length) onPick(entries[els[0].index][0]); } : undefined,
+      onHover: onPick ? (evt, els) => { const t = evt.native && evt.native.target; if (t) t.style.cursor = els.length ? 'pointer' : 'default'; } : undefined,
       scales:{ x:{beginAtZero:true, grid:{color:css('--grid')}, ticks:{precision:0}}, y:{grid:{display:false}, ticks:{callback(v){ const l=this.getLabelForValue(v); return l.length>34?l.slice(0,33)+'…':l; }}} } }
   });
 }
@@ -452,7 +467,8 @@ function render(day, prev, dayDate){
   chart('cTopUnitsTrend', { type:'line', data:{ labels:HOURS,
     datasets: top5.map((u,i) => line(`Unit ${u}`, hourly(day.filter(r=>r.unit===u)), PALETTE[i])) } });
 
-  hbar('cTopUnits', topUnits.slice(0,10), A);
+  lastTopUnits = topUnits.slice(0,10);
+  drawTopUnits();
   hbar('cTopAlarms', topAlarms.slice(0,10), B);
   $('dayChip').textContent = dLabel;
 
@@ -463,8 +479,25 @@ function render(day, prev, dayDate){
   renderTable();
 }
 
+/* ---------- unit filter (click a bar in Top 10 Units) ---------- */
+let unitFilter = '';          // exact unit shown in the log, '' = all
+let lastTopUnits = [];
+function drawTopUnits(){ hbar('cTopUnits', lastTopUnits, css('--cyan'), pickUnit, unitFilter); }
+function setUnitFilter(u){
+  unitFilter = u || '';
+  $('unitPill').hidden = !unitFilter;
+  $('unitPillName').textContent = unitFilter;
+  drawTopUnits();
+  renderTable();
+}
+function pickUnit(u){
+  setUnitFilter(u === unitFilter ? '' : u);          // click the same bar again to clear
+  const lp = document.querySelector('.log-panel');
+  if (unitFilter && lp && lp.scrollIntoView) lp.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function cols(){
-  const c = [['Time',r=>fmtTime(r.ts)],['Unit',r=>r.unit],['Alarm',r=>r.alarm],['Position',r=>r.pos]];
+  const c = [['Time',r=>fmtTime(r.ts)],['Unit',r=>r.unit],['Alarm',r=>r.alarm],['Location',r=>r.loc],['Position',r=>r.pos]];
   if (fieldMap.severity) c.push(['Severity',r=>r.sev]);
   if (fieldMap.flag) c.push(['Flag',r=>r.flag]);
   return c;
@@ -472,8 +505,9 @@ function cols(){
 
 function filtered(){
   const s = $('search').value.trim().toLowerCase();
-  const rows = [...current].sort((a,b)=>b.ts-a.ts);
-  return s ? rows.filter(r => `${r.unit} ${r.alarm} ${r.pos} ${r.sev}`.toLowerCase().includes(s)) : rows;
+  let rows = [...current].sort((a,b)=>b.ts-a.ts);
+  if (unitFilter) rows = rows.filter(r => r.unit === unitFilter);
+  return s ? rows.filter(r => `${r.unit} ${r.alarm} ${r.loc} ${r.pos} ${r.sev}`.toLowerCase().includes(s)) : rows;
 }
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -483,8 +517,8 @@ function renderTable(){
   $('tbl').querySelector('thead').innerHTML = '<tr>' + c.map(x=>`<th>${x[0]}</th>`).join('') + '</tr>';
   $('tbl').querySelector('tbody').innerHTML = rows.slice(0,MAX).map(r =>
     '<tr>' + c.map(x=>{ const v = x[1](r); const cls = x[0]==='Alarm' ? ' class="msg"' : (x[0]==='Flag' && v==='ON' ? ' class="on"' : ''); return `<td${cls}>${esc(v)}</td>`; }).join('') + '</tr>').join('')
-    || `<tr class="empty-row"><td colspan="${c.length}">No alarms for this day.</td></tr>`;
-  $('tblCount').textContent = `${rows.length} rows`;
+    || `<tr class="empty-row"><td colspan="${c.length}">${unitFilter ? 'No alarms for ' + esc(unitFilter) + ' on this day.' : 'No alarms for this day.'}</td></tr>`;
+  $('tblCount').textContent = `${rows.length} rows` + (unitFilter ? ` · unit ${unitFilter}` : '');
   $('tblNote').textContent = rows.length > MAX ? `Showing ${MAX} of ${rows.length} — use the filter or export CSV for all` : 'Newest first';
 }
 
@@ -494,7 +528,7 @@ function exportCsv(){
   const csv = [c.map(x=>q(x[0])).join(','), ...rows.map(r => c.map(x=>q(x[1](r))).join(','))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
-  a.download = `alarms_${$('dayPick').value}.csv`;
+  a.download = `alarms_${$('dayPick').value}${unitFilter ? '_' + unitFilter : ''}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -540,6 +574,7 @@ $('prevDay').onclick = () => { $('dayPick').value = toInput(addDays(fromInput($(
 $('nextDay').onclick = () => { const n = addDays(fromInput($('dayPick').value),1); if (n <= new Date()) { $('dayPick').value = toInput(n); load(); } };
 $('reload').onclick = load;
 $('search').oninput = renderTable;
+$('unitPillClear').onclick = () => setUnitFilter('');
 $('csv').onclick = exportCsv;
 load();
 </script>
